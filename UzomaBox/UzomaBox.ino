@@ -142,19 +142,29 @@ void loop()
         uint16_t pixelCount  = 0;
 
         if (g_playback.playNextFrame(&frameTimeUs, &pixelCount)) {
-          // Read the pixel data from SD card into LED drawing memory
           uint16_t dataSize = pixelCount * 3;
           uint8_t *drawMem = g_leds.getDrawingMemory();
           uint16_t maxSize  = g_leds.totalPixels() * 3;
-          if (dataSize > maxSize) dataSize = maxSize;
 
-          if (sdCardRead(drawMem, dataSize)) {
-            g_leds.show();
+          if (dataSize > maxSize) {
+            // File has more pixels than we can display:
+            // read what fits, then skip the rest so SD stays aligned
+            if (sdCardRead(drawMem, maxSize)) {
+              sdCardSkip(dataSize - maxSize);
+              g_leds.show();
+            }
+          } else {
+            // File has fewer (or equal) pixels:
+            // read everything, zero-fill the rest of drawing memory
+            if (sdCardRead(drawMem, dataSize)) {
+              if (dataSize < maxSize) {
+                memset(drawMem + dataSize, 0, maxSize - dataSize);
+              }
+              g_leds.show();
+            }
           }
         }
-        // If playback stopped (EOF), fall through handled inside playNextFrame
       } else {
-        // Nothing to play – could stay dark or switch mode
         delay(10);
       }
       break;
