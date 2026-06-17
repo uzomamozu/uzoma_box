@@ -11,7 +11,7 @@
  *  Hardware:
  *    Teensy 4.1 + OctoWS2811 Adaptor
  *    8 × WS2811 LED strips (default 512 LEDs each)
- *    SD card on SPI (CS = 3)
+ *    SD card on built-in microSD slot (BUILTIN_SDCARD)
  *    NativeEthernet for ArtNet + TCP
  */
 
@@ -56,8 +56,8 @@ void setup()
   delay(100);
   Serial.println("\n=== UzomaBox ===");
 
-  // ---- Initialise SD card (CS = pin 3) ----------------------------------
-  if (!sdInit(3)) {
+  // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) ------------
+  if (!sdInit()) {
     Serial.println("FATAL: No SD card found");
     while (1) { delay(1000); }
   }

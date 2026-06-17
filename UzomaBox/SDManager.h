@@ -50,6 +50,6 @@ unsigned long sdFileSize(void);
 bool sdFileSeek(unsigned long pos);
 
 // ---- Initialise SD card ---------------------------------------------------
-bool sdInit(uint8_t csPin);
+bool sdInit(void);
 
 #endif

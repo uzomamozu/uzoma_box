@@ -174,10 +174,10 @@ bool sdFileSeek(unsigned long pos)
   return g_file.seek(pos);
 }
 
-// ---- Initialise SD card ----------------------------------------------------
-bool sdInit(uint8_t csPin)
+// ---- Initialise SD card (Teensy 4.1 built-in microSD slot) -----------------
+bool sdInit(void)
 {
   // The SD library needs at least 200 ms after power-up
   delay(300);
-  return SD.begin(csPin);
+  return SD.begin(BUILTIN_SDCARD);
 }
