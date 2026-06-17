@@ -3,9 +3,6 @@
 // Timeout in ms before we consider ArtNet stream lost
 #define ARTNET_TIMEOUT_MS   2000
 
-// Universes per strip (512 DMX channels / 3 channels per LED = 170.67 → 3 universes)
-#define UNIVERSES_PER_STRIP  3
-
 // Offsets within a strip when mapping 3 universes
 // Universe 0: LEDs 0-169  (510 DMX channels)
 // Universe 1: LEDs 170-339 (510 DMX channels)
@@ -22,13 +19,12 @@ ArtNetHandler::ArtNetHandler()
   , _lastPacketTime(0)
   , _frameCb(nullptr)
   , _allUpdated(false)
+  , _frameStarted(false)
+  , _frameStartTime(0)
 {
-  for (int i = 0; i < 8; i++) {
-    _startUniverse[i] = i * 3;
-    _universeReceived[i] = false;
-  }
   _frameBuffer = new uint8_t[_totalPixels * 3];
   memset(_frameBuffer, 0, _totalPixels * 3);
+  resetFrameState();
 }
 
 ArtNetHandler::~ArtNetHandler()
@@ -40,6 +36,31 @@ ArtNetHandler::~ArtNetHandler()
 void ArtNetHandler::begin()
 {
   _udp.begin(ARTNET_PORT);
+}
+
+// ---------------------------------------------------------------------------
+void ArtNetHandler::resetFrameState()
+{
+  for (int i = 0; i < 8; i++) {
+    _universeReceived[i] = false;
+    for (int s = 0; s < UNIVERSES_PER_STRIP; s++) {
+      _universeSubReceived[i][s] = false;
+    }
+  }
+  _allUpdated   = false;
+  _frameStarted = false;
+  _frameStartTime = 0;
+}
+
+// ---------------------------------------------------------------------------
+void ArtNetHandler::flushFrame()
+{
+  // Push whatever we have in _frameBuffer to the LED callback
+  if (_frameCb) {
+    _frameCb(_frameBuffer, _totalPixels);
+  }
+  // Prepare for the next frame (keep existing pixel data in buffer)
+  resetFrameState();
 }
 
 // ---------------------------------------------------------------------------
@@ -60,19 +81,26 @@ int ArtNetHandler::poll()
     packetSize = _udp.parsePacket();
   }
 
-  // Check timeout – clear receiving flag if no packets for a while
+  // ---- Check receiving timeout ----
   if (_receiving && (millis() - _lastPacketTime > ARTNET_TIMEOUT_MS)) {
     _receiving = false;
   }
 
-  // If all strips have been updated, fire callback and reset flags
+  // ---- Frame assembly timeout ----
+  // If a frame was started but not completed within FRAME_TIMEOUT_MS,
+  // flush the partial data so LEDs don't freeze.
+  if (_frameStarted && (millis() - _frameStartTime > FRAME_TIMEOUT_MS)) {
+    // Serial.println("ArtNet: frame timeout - flushing partial data");
+    flushFrame();
+  }
+
+  // ---- Full frame ready ----
   if (_allUpdated) {
     _allUpdated = false;
-    // Reset per-strip flags for next frame
-    for (int i = 0; i < 8; i++) _universeReceived[i] = false;
     if (_frameCb) {
       _frameCb(_frameBuffer, _totalPixels);
     }
+    resetFrameState();
   }
 
   return parsed;
@@ -107,10 +135,21 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   // Find which strip and which sub-universe (0/1/2) this universe belongs to
   for (uint8_t strip = 0; strip < 8; strip++) {
     uint16_t base = _startUniverse[strip];
-    // Check if this universe is one of the 3 for this strip
     for (uint8_t sub = 0; sub < UNIVERSES_PER_STRIP; sub++) {
       if (universe == base + sub) {
-        // Map DMX data into _frameBuffer
+
+        // ---- Mark this sub-universe as received ----
+        if (!_universeSubReceived[strip][sub]) {
+          _universeSubReceived[strip][sub] = true;
+
+          // If this is the first sub of a new frame, start the timer
+          if (!_frameStarted) {
+            _frameStarted   = true;
+            _frameStartTime = millis();
+          }
+        }
+
+        // ---- Map DMX data into _frameBuffer ----
         uint16_t ledOffset = strip * _ledsPerStrip + kUniverseOffsets[sub];
         uint16_t ledCount  = kUniverseLengths[sub];
         if (ledCount > _ledsPerStrip - kUniverseOffsets[sub]) {
@@ -125,11 +164,17 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
           _frameBuffer[pixelIdx * 3 + 2] = dmxData[i * 3 + 2];  // B
         }
 
-        // If sub == 2 (last partial universe for this strip), mark strip as received
-        if (sub == UNIVERSES_PER_STRIP - 1) {
-          _universeReceived[strip] = true;
+        // ---- Check if this strip now has all 3 sub-universes ----
+        bool stripComplete = true;
+        for (uint8_t s = 0; s < UNIVERSES_PER_STRIP; s++) {
+          if (!_universeSubReceived[strip][s]) {
+            stripComplete = false;
+            break;
+          }
         }
-        // Check if all strips are now updated
+        _universeReceived[strip] = stripComplete;
+
+        // ---- Check if ALL strips are now complete ----
         bool allDone = true;
         for (int s = 0; s < 8; s++) {
           if (!_universeReceived[s]) { allDone = false; break; }
@@ -161,7 +206,5 @@ void ArtNetHandler::resetTimeout()
 void ArtNetHandler::setUniverseMapping(const uint16_t startUniv[8])
 {
   memcpy(_startUniverse, startUniv, sizeof(_startUniverse));
-  // Reset all flags
-  for (int i = 0; i < 8; i++) _universeReceived[i] = false;
-  _allUpdated = false;
+  resetFrameState();
 }

@@ -11,6 +11,13 @@
 #define ARTNET_DMX_LEN      512  // DMX channels per universe
 #define ARTNET_OP_DMX       0x5000
 
+// Universes per strip (512 DMX channels / 3 channels per LED = 170.67 → 3 universes)
+#define UNIVERSES_PER_STRIP  3
+
+// Maximum time (ms) to wait for a complete frame before flushing partial data
+// Prevents LED freeze when one universe is lost
+#define FRAME_TIMEOUT_MS     50
+
 class ArtNetHandler {
 public:
   ArtNetHandler();
@@ -47,22 +54,33 @@ public:
   void setLedsPerStrip(uint16_t n) { _ledsPerStrip = n; _totalPixels = n * 8; }
 
 private:
+  // Reset all per-frame flags and state
+  void resetFrameState();
+
   // Parse a single ArtDMX packet and write DMX data into _frameBuffer
   void processPacket(const uint8_t *packet, int len);
+
+  // Fire the frame callback and reset for next frame
+  void flushFrame();
 
   EthernetUDP   _udp;
   uint8_t       _packetBuffer[ARTNET_HEADER_LEN + ARTNET_DMX_LEN + 4];
 
-  uint16_t      _startUniverse[8];  // first universe for each of the 8 strips
+  uint16_t      _startUniverse[8];          // first universe for each of the 8 strips
   uint16_t      _ledsPerStrip;
   uint16_t      _totalPixels;
-  uint8_t      *_frameBuffer;       // RGB interleaved, totalPixels * 3 bytes
+  uint8_t      *_frameBuffer;               // RGB interleaved, totalPixels * 3 bytes
   bool          _receiving;
-  uint32_t      _lastPacketTime;    // ms
+  uint32_t      _lastPacketTime;            // ms
 
   FrameCallback _frameCb;
-  bool          _universeReceived[8]; // per-strip flag
-  bool          _allUpdated;           // true if all active strips received data
+
+  // Per-frame assembly tracking
+  bool          _universeReceived[8];       // true when strip has all 3 sub-universes
+  bool          _universeSubReceived[8][UNIVERSES_PER_STRIP]; // per sub-universe flag
+  bool          _allUpdated;                // true if all strips have data
+  bool          _frameStarted;              // true once at least 1 sub-universe arrived
+  uint32_t      _frameStartTime;            // ms when first sub-universe of this frame arrived
 };
 
 #endif
