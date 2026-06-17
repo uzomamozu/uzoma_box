@@ -27,14 +27,25 @@ import socket
 import threading
 import time
 import queue
+import subprocess
+import re
 from datetime import datetime
 
 # ============================================================================
 # Network interface enumeration (stdlib only)
 # ============================================================================
 def get_interfaces():
-    """Return list of (ip, name) tuples for all non-loopback IPv4 interfaces."""
+    """
+    Return list of (ip, name) tuples for all non-loopback IPv4 interfaces.
+
+    Tries three strategies in order:
+      1. socket.if_nameindex() + getaddrinfo()  (Linux / macOS)
+      2. Parsing ``ipconfig`` output             (Windows)
+      3. gethostbyname(gethostname())            (fallback)
+    """
     interfaces = []
+
+    # ---- Strategy 1: POSIX (if_nameindex + getaddrinfo) ----
     try:
         for if_idx, if_name in socket.if_nameindex():
             try:
@@ -48,22 +59,68 @@ def get_interfaces():
             except (socket.gaierror, OSError):
                 pass
     except Exception:
-        # Fallback for older Python / platforms without if_nameindex:
-        # Attempt to get host's IP via gethostbyname
-        try:
-            hostname = socket.gethostname()
-            ip = socket.gethostbyname(hostname)
-            if not ip.startswith("127."):
-                interfaces.append((ip, hostname))
-        except:
-            pass
-    # Deduplicate by IP (keep first occurrence)
+        pass
+
+    # Deduplicate by IP
     seen = set()
     unique = []
     for ip, name in interfaces:
         if ip not in seen:
             seen.add(ip)
             unique.append((ip, name))
+
+    if unique:
+        return unique
+
+    # ---- Strategy 2: Windows (parse ipconfig) ----
+    try:
+        output = subprocess.check_output(
+            "ipconfig", shell=True, stderr=subprocess.DEVNULL,
+            timeout=5
+        ).decode("utf-8", errors="replace")
+
+        lines = output.splitlines()
+        current_adapter = None
+        for line in lines:
+            # Detect adapter header: "Ethernet adapter XYZ:" or "Wi-Fi adapter XYZ:"
+            m = re.match(r'^(.+?)\s+adapter\s+.+?:', line, re.IGNORECASE)
+            if m:
+                current_adapter = m.group(1).strip()
+                continue
+
+            # Detect IPv4 address
+            m = re.search(r'IPv4[.\s]*Address[.\s]*[:.]+[ \t]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', line)
+            if not m:
+                m = re.search(r'IP[.\s]*Address[.\s]*[:.]+[ \t]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', line)
+            if m and current_adapter:
+                ip = m.group(1)
+                if not ip.startswith("127."):
+                    if (ip, current_adapter) not in interfaces:
+                        interfaces.append((ip, current_adapter))
+                    current_adapter = None  # one IP per adapter
+    except Exception:
+        pass
+
+    # Deduplicate again
+    seen = set()
+    unique = []
+    for ip, name in interfaces:
+        if ip not in seen:
+            seen.add(ip)
+            unique.append((ip, name))
+
+    if unique:
+        return unique
+
+    # ---- Strategy 3: Basic gethostbyname fallback ----
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if not ip.startswith("127."):
+            unique.append((ip, hostname))
+    except:
+        pass
+
     return unique
 
 # ============================================================================
