@@ -47,7 +47,7 @@ def get_interfaces():
                         break
             except (socket.gaierror, OSError):
                 pass
-    except (AttributeError, OSError):
+    except Exception:
         # Fallback for older Python / platforms without if_nameindex:
         # Attempt to get host's IP via gethostbyname
         try:
@@ -279,7 +279,12 @@ class UzomaBoxApp:
         self.iface_var = tk.StringVar()
         self.iface_combo = ttk.Combobox(conn_frame, textvariable=self.iface_var, width=26, state="readonly")
         self.iface_combo.grid(row=0, column=3, padx=(0,8))
-        self._populate_interfaces()
+        try:
+            self._populate_interfaces()
+        except Exception:
+            # If interface enumeration fails, still show the dropdown with (auto)
+            self.iface_combo["values"] = ["(auto)"]
+            self.iface_var.set("(auto)")
 
         self.connect_btn = ttk.Button(conn_frame, text="Connect", command=self._on_connect)
         self.connect_btn.grid(row=0, column=4, padx=(0,4))
