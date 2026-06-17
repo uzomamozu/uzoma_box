@@ -331,6 +331,10 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       g_tcp.sendResponse("OK:stopped");
       break;
 
+    case CMD_PING:
+      g_tcp.sendResponse("PONG");
+      break;
+
     case CMD_STATUS:
       printStatus();
       break;

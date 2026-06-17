@@ -53,6 +53,7 @@ enum TCPCommand {
   CMD_PLAY_SEQUENCE,
   CMD_STOP,
   CMD_STATUS,
+  CMD_PING,
   CMD_UNKNOWN
 };
 
