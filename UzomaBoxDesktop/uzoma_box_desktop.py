@@ -30,6 +30,43 @@ import queue
 from datetime import datetime
 
 # ============================================================================
+# Network interface enumeration (stdlib only)
+# ============================================================================
+def get_interfaces():
+    """Return list of (ip, name) tuples for all non-loopback IPv4 interfaces."""
+    interfaces = []
+    try:
+        for if_idx, if_name in socket.if_nameindex():
+            try:
+                addrs = socket.getaddrinfo(if_name, None, socket.AF_INET)
+                for addr in addrs:
+                    ip = addr[4][0]
+                    # Skip loopback
+                    if not ip.startswith("127."):
+                        interfaces.append((ip, if_name))
+                        break
+            except (socket.gaierror, OSError):
+                pass
+    except (AttributeError, OSError):
+        # Fallback for older Python / platforms without if_nameindex:
+        # Attempt to get host's IP via gethostbyname
+        try:
+            hostname = socket.gethostname()
+            ip = socket.gethostbyname(hostname)
+            if not ip.startswith("127."):
+                interfaces.append((ip, hostname))
+        except:
+            pass
+    # Deduplicate by IP (keep first occurrence)
+    seen = set()
+    unique = []
+    for ip, name in interfaces:
+        if ip not in seen:
+            seen.add(ip)
+            unique.append((ip, name))
+    return unique
+
+# ============================================================================
 # Configuration defaults
 # ============================================================================
 DEFAULT_IP       = "192.168.0.211"
@@ -45,13 +82,14 @@ STATUS_INTERVAL  = 5.0      # seconds between automatic STATUS requests
 class TcpClient:
     """Manages a single TCP connection to the Teensy."""
 
-    def __init__(self, host, port, send_queue, recv_queue, log_callback, status_callback):
+    def __init__(self, host, port, send_queue, recv_queue, log_callback, status_callback, bind_ip=None):
         self.host = host
         self.port = port
         self.send_queue = send_queue       # commands to send
         self.recv_queue = recv_queue       # responses received
         self.log_callback = log_callback
         self.status_callback = status_callback  # called with (connected, latency_ms)
+        self.bind_ip = bind_ip             # optional IP to bind socket to
 
         self.sock = None
         self.running = False
@@ -84,6 +122,11 @@ class TcpClient:
                 try:
                     self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self.sock.settimeout(5.0)
+
+                    # Bind to a specific adapter if requested
+                    if self.bind_ip:
+                        self.sock.bind((self.bind_ip, 0))
+
                     self.sock.connect((self.host, self.port))
                     self.connected = True
                     self.ping_count = 0
@@ -212,6 +255,7 @@ class UzomaBoxApp:
 
         self.client = None
         self.connected = False
+        self._interface_map = {}  # maps combobox display string -> IP
 
         self._build_ui()
         self._poll_queue()
@@ -226,22 +270,29 @@ class UzomaBoxApp:
         conn_frame = ttk.LabelFrame(main_frame, text="Connection", padding=8)
         conn_frame.pack(fill=tk.X, pady=(0, 8))
 
+        # Row 0
         ttk.Label(conn_frame, text="IP:").grid(row=0, column=0, sticky=tk.W, padx=(0,4))
         self.ip_var = tk.StringVar(value=DEFAULT_IP)
         ttk.Entry(conn_frame, textvariable=self.ip_var, width=18).grid(row=0, column=1, padx=(0,8))
 
+        ttk.Label(conn_frame, text="Adapter:").grid(row=0, column=2, sticky=tk.W, padx=(8,4))
+        self.iface_var = tk.StringVar()
+        self.iface_combo = ttk.Combobox(conn_frame, textvariable=self.iface_var, width=26, state="readonly")
+        self.iface_combo.grid(row=0, column=3, padx=(0,8))
+        self._populate_interfaces()
+
         self.connect_btn = ttk.Button(conn_frame, text="Connect", command=self._on_connect)
-        self.connect_btn.grid(row=0, column=2, padx=(0,4))
+        self.connect_btn.grid(row=0, column=4, padx=(0,4))
         self.disconnect_btn = ttk.Button(conn_frame, text="Disconnect", command=self._on_disconnect, state=tk.DISABLED)
-        self.disconnect_btn.grid(row=0, column=3, padx=(0,12))
+        self.disconnect_btn.grid(row=0, column=5, padx=(0,12))
 
         self.conn_indicator = tk.Canvas(conn_frame, width=14, height=14, highlightthickness=0)
-        self.conn_indicator.grid(row=0, column=4, padx=(0,4))
+        self.conn_indicator.grid(row=0, column=6, padx=(0,4))
         self._set_conn_indicator("red")
 
-        ttk.Label(conn_frame, text="Latency:").grid(row=0, column=5, sticky=tk.W, padx=(8,4))
+        ttk.Label(conn_frame, text="Latency:").grid(row=0, column=7, sticky=tk.W, padx=(8,4))
         self.latency_var = tk.StringVar(value="-- ms")
-        ttk.Label(conn_frame, textvariable=self.latency_var, width=8).grid(row=0, column=6, sticky=tk.W)
+        ttk.Label(conn_frame, textvariable=self.latency_var, width=8).grid(row=0, column=8, sticky=tk.W)
 
         # ---- Mode frame ---------------------------------------------------
         mode_frame = ttk.LabelFrame(main_frame, text="Mode", padding=8)
@@ -321,6 +372,18 @@ class UzomaBoxApp:
             font=("Consolas", 9), state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
+    def _populate_interfaces(self):
+        """Fill the adapter dropdown with detected interfaces."""
+        ifaces = get_interfaces()
+        self._interface_map = {}
+        items = ["(auto)"]
+        for ip, name in ifaces:
+            label = "%s  (%s)" % (ip, name)
+            self._interface_map[label] = ip
+            items.append(label)
+        self.iface_combo["values"] = items
+        self.iface_var.set("(auto)")
+
     def _add_cfg_row(self, parent, row, label, attr, default):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, padx=(0, 8))
         var = tk.StringVar(value=default)
@@ -359,10 +422,16 @@ class UzomaBoxApp:
     def _start_client(self, host, port):
         if self.client:
             self.client.stop()
+
+        # Get the selected adapter IP (or None for auto)
+        selected_label = self.iface_var.get()
+        bind_ip = self._interface_map.get(selected_label)
+
         self.client = TcpClient(
             host, port,
             self.send_queue, self.recv_queue,
-            self._log, self._on_status_update
+            self._log, self._on_status_update,
+            bind_ip=bind_ip
         )
         self.client.start()
         self._set_connected_ui(True, connecting=True)

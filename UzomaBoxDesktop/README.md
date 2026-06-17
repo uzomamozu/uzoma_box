@@ -20,7 +20,7 @@ Or double-click `uzoma_box_desktop.py` in Windows Explorer.
 
 | Section | Feature |
 |---------|---------|
-| **Connection** | Connect/Disconnect by IP address, real-time latency indicator (PING/PONG) |
+| **Connection** | Connect/Disconnect by IP address; **Adapter** dropdown to bind to a specific network interface (shows each adapter's IP); real-time latency indicator (PING/PONG) |
 | **Mode** | Radio buttons to switch between ArtNet, Playback, and Record |
 | **Recording** | Start/Stop recording, status display |
 | **Playback** | Play a single `.BIN` file, play all files in sequence, Stop |
