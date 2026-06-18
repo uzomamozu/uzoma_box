@@ -540,8 +540,8 @@ class DeviceConfigWindow:
         if not messagebox.askyesno("Change IP", "Changing IP to %s\nDevice will reboot.\nContinue?" % new_ip):
             return
         self._cmd_send("CONFIG:ip=%s" % new_ip)
-        self.status_var.set("IP changed, device rebooting...")
         self.log("Changed IP on %s to %s (rebooting)" % (self.ip, new_ip))
+        self.win.destroy()
 
     # ---- LED Tab Actions ---------------------------------------------------
 
@@ -562,8 +562,8 @@ class DeviceConfigWindow:
         time.sleep(0.05)
         self._cmd_send("CONFIG:led_width=%s" % led_w)
         self._cmd_send("CONFIG:output_active=%s" % outputs)
-        self.status_var.set("LED settings queued (color live, reboot pending)")
-        self.log("LED settings updated on %s" % self.ip)
+        self.log("LED settings updated on %s (rebooting)" % self.ip)
+        self.win.destroy()
 
     # ---- Control Tab Actions -----------------------------------------------
 
@@ -576,7 +576,8 @@ class DeviceConfigWindow:
     def _save_record_fps(self):
         fps = self.record_fps_var.get().strip()
         self._cmd_send("CONFIG:record_fps=%s" % fps)
-        self.status_var.set("Record FPS updated (rebooting)")
+        self.log("Record FPS updated on %s (rebooting)" % self.ip)
+        self.win.destroy()
 
     def _rec_start(self):
         self._cmd_send("REC:START")
