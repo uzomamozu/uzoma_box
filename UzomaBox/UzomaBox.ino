@@ -508,7 +508,16 @@ void setMode(OperatingMode newMode)
 
 void printStatus()
 {
-  char buf[384];
+  // Build comma-separated start_universe string
+  char su[64];
+  su[0] = 0;
+  for (int i = 0; i < 8; i++) {
+    if (i > 0) strcat(su, ",");
+    char tmp[8]; sprintf(tmp, "%u", g_config.startUniverse[i]);
+    strcat(su, tmp);
+  }
+
+  char buf[512];
   snprintf(buf, sizeof(buf),
     "mode=%s\r\n"
     "ip=%d.%d.%d.%d\r\n"
@@ -523,6 +532,7 @@ void printStatus()
     "playback_speed=%.2f\r\n"
     "record_fps=%u\r\n"
     "record_time=%lu\r\n"
+    "start_universe=%s\r\n"
     "file_pos=%lu\r\n"
     "file_total=%lu",
     (g_mode == MODE_ARTNET)   ? "artnet" :
@@ -539,6 +549,7 @@ void printStatus()
     g_playback.getSpeed(),
     g_config.recordFps,
     g_playback.getRecordTime(),
+    su,
     (g_playback.isPlaying() ? g_playback.filePosition() : 0),
     (g_playback.isPlaying() ? g_playback.fileSize() : 0)
   );

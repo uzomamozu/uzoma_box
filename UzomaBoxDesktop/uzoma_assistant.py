@@ -235,6 +235,11 @@ class DeviceConfigWindow:
         status_frame = ttk.Frame(self.win, relief=tk.SUNKEN, borderwidth=1)
         status_frame.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(4, 0))
 
+        # Connection indicator (green/red circle)
+        self._conn_indicator = tk.Canvas(status_frame, width=14, height=14, highlightthickness=0)
+        self._conn_indicator.pack(side=tk.LEFT, padx=(4, 6))
+        self._conn_indicator.create_oval(1, 1, 13, 13, fill="red", outline="black")
+
         self._status_labels = {}
         fields = [("mode", "Mode:"), ("playing", "Playing:"), ("recording", "Rec:"),
                   ("file", "File:"), ("speed", "Speed:"), ("record_time", "Time:")]
@@ -757,12 +762,28 @@ class DeviceConfigWindow:
         """Poll STATUS every 5 seconds using the persistent TCP connection."""
         try:
             if self.win.winfo_exists():
-                lines = self._cmd("STATUS")
-                for line in lines:
-                    self._parse_status_line(line)
+                try:
+                    lines = self._cmd("STATUS")
+                    # If we got lines, connection is good — green indicator
+                    if lines:
+                        self._set_conn_green()
+                    for line in lines:
+                        self._parse_status_line(line)
+                except Exception:
+                    self._set_conn_red()
                 self.after_id = self.win.after(5000, self._poll_status)
         except tk.TclError:
             pass
+
+    def _set_conn_green(self):
+        """Set connection indicator to green."""
+        self._conn_indicator.delete("all")
+        self._conn_indicator.create_oval(1, 1, 13, 13, fill="green", outline="black")
+
+    def _set_conn_red(self):
+        """Set connection indicator to red."""
+        self._conn_indicator.delete("all")
+        self._conn_indicator.create_oval(1, 1, 13, 13, fill="red", outline="black")
 
     def on_close(self):
         if self.after_id:
