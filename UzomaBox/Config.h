@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <NativeEthernet.h>
 
+#include "LEDController.h"
+
 #define CONFIG_FILENAME "CONFIG.TXT"
 
 enum OperatingMode {
@@ -19,6 +21,7 @@ struct AppConfig {
   uint16_t ledWidth;
   uint16_t startUniverse[8];
   bool outputActive[8];
+  ColorOrder colorOrder;
 };
 
 bool loadConfig(AppConfig &cfg);

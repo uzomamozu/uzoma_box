@@ -99,6 +99,9 @@ void setup()
   g_tcp.begin();
   Serial.println("TCP server on port 8888");
 
+  // ---- Apply color order from config ------------------------------------
+  g_leds.setColorOrder(g_config.colorOrder);
+
   // ---- Set initial mode -------------------------------------------------
   g_mode = g_config.mode;
   if (g_mode == MODE_PLAYBACK) {
@@ -150,6 +153,18 @@ void loop()
             // File has more pixels than we can display:
             // read what fits, then skip the rest so SD stays aligned
             if (sdCardRead(drawMem, maxSize)) {
+              // Apply color-order reordering inline on the drawing memory
+              {
+                const uint8_t *perm = colorOrderPerm[g_leds.getColorOrder()];
+                uint16_t pxCount = maxSize / 3;
+                for (uint16_t pi = 0; pi < pxCount; pi++) {
+                  uint8_t *px = drawMem + pi * 3;
+                  uint8_t tmp[3] = {px[0], px[1], px[2]};
+                  px[0] = tmp[perm[0]];
+                  px[1] = tmp[perm[1]];
+                  px[2] = tmp[perm[2]];
+                }
+              }
               sdCardSkip(dataSize - maxSize);
               g_leds.show();
             }
@@ -157,6 +172,18 @@ void loop()
             // File has fewer (or equal) pixels:
             // read everything, zero-fill the rest of drawing memory
             if (sdCardRead(drawMem, dataSize)) {
+              // Apply color-order reordering inline on the drawing memory
+              {
+                const uint8_t *perm = colorOrderPerm[g_leds.getColorOrder()];
+                uint16_t pxCount = dataSize / 3;
+                for (uint16_t pi = 0; pi < pxCount; pi++) {
+                  uint8_t *px = drawMem + pi * 3;
+                  uint8_t tmp[3] = {px[0], px[1], px[2]};
+                  px[0] = tmp[perm[0]];
+                  px[1] = tmp[perm[1]];
+                  px[2] = tmp[perm[2]];
+                }
+              }
               if (dataSize < maxSize) {
                 memset(drawMem + dataSize, 0, maxSize - dataSize);
               }
@@ -185,7 +212,7 @@ void loop()
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  // Push to LEDs
+  // Push to LEDs – fillFrame() already honors the color order from g_leds
   g_leds.fillFrame(rgbData, totalPixels);
   g_leds.show();
 
@@ -304,6 +331,13 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         g_tcp.sendResponse("OK:output_active updated – rebooting");
         delay(100);
         rebootTeensy();
+      } else if (!strncmp(kv, "color_order=", 12)) {
+        ColorOrder order = parseColorOrder(kv + 12);
+        g_config.colorOrder = order;
+        g_leds.setColorOrder(order);
+        saveConfig(g_config);
+        g_tcp.sendResponse("OK:color_order updated (live)");
+        Serial.printf("Color order set to: %s\n", colorOrderStr(order));
       } else {
         g_tcp.sendResponse("ERR:unknown config key");
       }
@@ -394,7 +428,7 @@ void setMode(OperatingMode newMode)
 
 void printStatus()
 {
-  char buf[256];
+  char buf[312];
   snprintf(buf, sizeof(buf),
     "mode=%s\r\n"
     "ip=%d.%d.%d.%d\r\n"
@@ -404,7 +438,8 @@ void printStatus()
     "playing=%s\r\n"
     "file=%s\r\n"
     "frames=%lu\r\n"
-    "artnet_active=%s",
+    "artnet_active=%s\r\n"
+    "color_order=%s",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" : "record",
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
@@ -414,7 +449,8 @@ void printStatus()
     g_playback.isPlaying() ? "yes" : "no",
     g_playback.currentFilename(),
     g_playback.framesPlayed(),
-    g_artNet.isReceiving() ? "yes" : "no"
+    g_artNet.isReceiving() ? "yes" : "no",
+    colorOrderStr(g_config.colorOrder)
   );
   g_tcp.sendResponse(buf);
 }

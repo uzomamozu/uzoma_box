@@ -24,7 +24,7 @@ Or double-click `uzoma_box_desktop.py` in Windows Explorer.
 | **Mode** | Radio buttons to switch between ArtNet, Playback, and Record |
 | **Recording** | Start/Stop recording, status display |
 | **Playback** | Play a single `.BIN` file, play all files in sequence, Stop |
-| **Configuration** | Edit IP, MAC, LED width, start universes, output mask — Apply saves to SD card and reboots the Teensy |
+| **Configuration** | Edit IP, MAC, LED width, start universes, output mask, color order — Apply saves to SD card and reboots the Teensy |
 | **Status** | Displays raw STATUS response from Teensy with a Refresh button |
 | **Log** | Timestamped log of all sent/received TCP messages |
 
@@ -42,7 +42,7 @@ Or double-click `uzoma_box_desktop.py` in Windows Explorer.
 | `PLAY:SEQUENCE` | Play all `.BIN` files in sequence |
 | `STOP` | Stop any playback or recording |
 | `STATUS` | Request status information |
-| `CONFIG:key=value` | Update a configuration value (reboots Teensy) |
+| `CONFIG:key=value` | Update a configuration value (reboots Teensy) — keys: `ip`, `mac`, `led_width`, `start_universe`, `output_active`, `color_order` |
 
 ## Auto-connection
 

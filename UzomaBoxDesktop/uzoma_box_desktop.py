@@ -407,9 +407,10 @@ class UzomaBoxApp:
         self._add_cfg_row(cfg_frame, 2, "LED Width:", "cfg_led_width", "512")
         self._add_cfg_row(cfg_frame, 3, "Universes:", "cfg_universes", "0,3,6,9,12,15,18,21")
         self._add_cfg_row(cfg_frame, 4, "Outputs:",   "cfg_outputs",   "1,1,1,1,1,1,1,1")
+        self._add_cfg_row(cfg_frame, 5, "Color Order:","cfg_color_order", "rgb", is_combo=True, combo_values=["rgb", "rbg", "grb", "gbr", "brg", "bgr"])
 
         ttk.Button(cfg_frame, text="Apply All", command=self._on_config_apply)\
-            .grid(row=5, column=0, columnspan=3, pady=(6, 0))
+            .grid(row=6, column=0, columnspan=3, pady=(6, 0))
 
         # ---- Status frame -------------------------------------------------
         status_frame = ttk.LabelFrame(main_frame, text="Status", padding=8)
@@ -446,11 +447,16 @@ class UzomaBoxApp:
         self.iface_combo["values"] = items
         self.iface_var.set("(auto)")
 
-    def _add_cfg_row(self, parent, row, label, attr, default):
+    def _add_cfg_row(self, parent, row, label, attr, default, is_combo=False, combo_values=None):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, padx=(0, 8))
         var = tk.StringVar(value=default)
         setattr(self, attr + "_var", var)
-        ttk.Entry(parent, textvariable=var, width=32).grid(row=row, column=1, sticky=tk.W, padx=(0, 12))
+        if is_combo:
+            combo = ttk.Combobox(parent, textvariable=var, values=combo_values or [default],
+                                  width=29, state="readonly")
+            combo.grid(row=row, column=1, sticky=tk.W, padx=(0, 12))
+        else:
+            ttk.Entry(parent, textvariable=var, width=32).grid(row=row, column=1, sticky=tk.W, padx=(0, 12))
 
     def _set_conn_indicator(self, color):
         self.conn_indicator.delete("all")
@@ -568,6 +574,7 @@ class UzomaBoxApp:
         led_w    = self.cfg_led_width_var.get().strip()
         univ     = self.cfg_universes_var.get().strip()
         outputs  = self.cfg_outputs_var.get().strip()
+        color    = self.cfg_color_order_var.get().strip()
 
         if not messagebox.askyesno("Apply Configuration",
                                      "This will save the new configuration to the SD card\n"
@@ -575,6 +582,9 @@ class UzomaBoxApp:
                                      "Continue?"):
             return
 
+        # Send color_order first — it applies live, no reboot.
+        # Then send the rest (ip causes reboot, subsequent commands are lost).
+        self._send("CONFIG:color_order=%s" % color)
         self._send("CONFIG:ip=%s" % ip)
         # Wait a moment, then send the rest (they queue up)
         time.sleep(0.05)

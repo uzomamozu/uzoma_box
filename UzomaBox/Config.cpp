@@ -13,6 +13,7 @@ void configSetDefaults(AppConfig &cfg)
   cfg.mac[2]          = 0xBE; cfg.mac[3] = 0xEF;
   cfg.mac[4]          = 0xBE; cfg.mac[5] = 0xED;
   cfg.ledWidth        = 512;
+  cfg.colorOrder      = ORDER_RGB;
 
   // Default start universes per strip: 0, 3, 6, 9, 12, 15, 18, 21
   for (int i = 0; i < 8; i++) {
@@ -104,6 +105,9 @@ bool loadConfig(AppConfig &cfg)
         tok = strtok(NULL, ",");
       }
     }
+    else if (!strcmp(key, "color_order")) {
+      cfg.colorOrder = parseColorOrder(value);
+    }
   }
 
   sdFileClose();
@@ -145,6 +149,8 @@ bool saveConfig(const AppConfig &cfg)
     strcat(buf, cfg.outputActive[i] ? "1" : "0");
   }
   sdFilePrintf("output_active=%s\n", buf);
+
+  sdFilePrintf("color_order=%s\n", colorOrderStr(cfg.colorOrder));
 
   sdFileClose();
   return true;
