@@ -710,7 +710,8 @@ class UzomaBoxAssistant:
         logo_path = os.path.join(script_dir, "..", "black.png")
         if os.path.exists(logo_path):
             try:
-                self._logo = tk.PhotoImage(file=logo_path)
+                # subsample(3,3) reduces size ~9x to fit in the toolbar area
+                self._logo = tk.PhotoImage(file=logo_path).subsample(3, 3)
             except:
                 pass
 
