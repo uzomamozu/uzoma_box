@@ -46,6 +46,9 @@ void sdNextRecordFilename(char *buf, unsigned int bufSize);
 // ---- File size ------------------------------------------------------------
 unsigned long sdFileSize(void);
 
+// ---- File position (bytes read from start) --------------------------------
+unsigned long sdFilePosition(void);
+
 // ---- Seek (for re-playing) ------------------------------------------------
 bool sdFileSeek(unsigned long pos);
 

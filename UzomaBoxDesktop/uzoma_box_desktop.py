@@ -317,6 +317,8 @@ class UzomaBoxApp:
         self._interface_map = {}  # maps combobox display string -> IP
         self._file_list = []      # list of .BIN filenames
         self._listening_list = False  # true while receiving LIST response
+        self._last_file_pos = 0
+        self._last_file_total = 0
 
         self._build_ui()
         self._poll_queue()
@@ -395,6 +397,14 @@ class UzomaBoxApp:
         self.speed_label_var = tk.StringVar(value="1.00x")
         ttk.Label(pb_left, textvariable=self.speed_label_var, width=8).grid(row=1, column=4, pady=(4,0))
         ttk.Button(pb_left, text="Set", command=self._on_speed_set, width=6).grid(row=1, column=5, padx=(4,0), pady=(4,0))
+
+        # Progress bar row
+        ttk.Label(pb_left, text="Progress:").grid(row=2, column=0, sticky=tk.W, padx=(0,4), pady=(4,0))
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_bar = ttk.Progressbar(pb_left, variable=self.progress_var, length=250, mode="determinate")
+        self.progress_bar.grid(row=2, column=1, columnspan=4, sticky=tk.W, pady=(4,0))
+        self.progress_label_var = tk.StringVar(value="-- / --")
+        ttk.Label(pb_left, textvariable=self.progress_label_var, width=14).grid(row=2, column=5, pady=(4,0))
 
         # Right: File list
         pb_right = ttk.Frame(pb_frame)
@@ -699,6 +709,48 @@ class UzomaBoxApp:
     def _update_status(self, resp):
         self.status_text.insert(tk.END, resp + "\n")
         self.status_text.see(tk.END)
+
+        # Parse file_pos and file_total to update progress bar
+        self._parse_progress(resp)
+
+    def _parse_progress(self, resp):
+        """Extract file_pos/file_total from STATUS response lines."""
+        line = resp.strip()
+        if line.startswith("file_pos="):
+            try:
+                pos = int(line.split("=", 1)[1])
+                self._last_file_pos = pos
+                self._update_progress_bar()
+            except (ValueError, IndexError):
+                pass
+        elif line.startswith("file_total="):
+            try:
+                total = int(line.split("=", 1)[1])
+                self._last_file_total = total
+                self._update_progress_bar()
+            except (ValueError, IndexError):
+                pass
+        elif line.startswith("playing="):
+            playing = line.split("=", 1)[1].strip().lower() == "yes"
+            if not playing:
+                self.progress_var.set(0.0)
+                self.progress_label_var.set("-- / --")
+                self._last_file_pos = 0
+                self._last_file_total = 0
+
+    def _update_progress_bar(self):
+        total = getattr(self, '_last_file_total', 0)
+        pos = getattr(self, '_last_file_pos', 0)
+        if total > 0:
+            pct = min(100.0, (pos / total) * 100.0)
+            self.progress_var.set(pct)
+            # Show in KB for readability
+            pos_kb = pos // 1024
+            total_kb = total // 1024
+            self.progress_label_var.set("%d / %d KB" % (pos_kb, max(1, total_kb)))
+        else:
+            self.progress_var.set(0.0)
+            self.progress_label_var.set("-- / --")
 
     # ---- LOGGING ---------------------------------------------------------
 

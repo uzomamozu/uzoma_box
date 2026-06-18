@@ -166,6 +166,13 @@ unsigned long sdFileSize(void)
   return g_opened ? g_file.size() : 0;
 }
 
+// ---- File position ----------------------------------------------------------
+unsigned long sdFilePosition(void)
+{
+  if (!g_opened) return 0;
+  return g_file.position();
+}
+
 // ---- Seek ------------------------------------------------------------------
 bool sdFileSeek(unsigned long pos)
 {

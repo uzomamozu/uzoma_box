@@ -70,6 +70,10 @@ public:
   // Reset frame counter
   void resetFrameCount() { _framesPlayed = 0; }
 
+  // File progress (bytes)
+  uint32_t filePosition() const { return sdFilePosition(); }
+  uint32_t fileSize() const { return sdFileSize(); }
+
 private:
   // Open the next file in the sequence
   bool openNextFile();

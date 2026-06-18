@@ -493,7 +493,9 @@ void printStatus()
     "artnet_active=%s\r\n"
     "color_order=%s\r\n"
     "playback_speed=%.2f\r\n"
-    "record_fps=%u",
+    "record_fps=%u\r\n"
+    "file_pos=%lu\r\n"
+    "file_total=%lu",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" : "record",
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
@@ -506,7 +508,9 @@ void printStatus()
     g_artNet.isReceiving() ? "yes" : "no",
     colorOrderStr(g_config.colorOrder),
     g_playback.getSpeed(),
-    g_config.recordFps
+    g_config.recordFps,
+    (g_playback.isPlaying() ? g_playback.filePosition() : 0),
+    (g_playback.isPlaying() ? g_playback.fileSize() : 0)
   );
   g_tcp.sendResponse(buf);
 }
