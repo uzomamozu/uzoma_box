@@ -157,30 +157,12 @@ class TcpClientPersistent:
 # Network interface enumeration
 # ============================================================================
 def get_interfaces():
-    """Return list of (ip, name) tuples for all non-loopback IPv4 interfaces."""
+    """
+    Return list of (ip, name) tuples for all non-loopback IPv4 interfaces.
+    Uses only ipconfig on Windows — socket.getaddrinfo() with DNS can hang
+    for 30+ seconds on systems with virtual adapters (Hyper-V, VPN, WSL).
+    """
     interfaces = []
-    try:
-        for if_idx, if_name in socket.if_nameindex():
-            try:
-                addrs = socket.getaddrinfo(if_name, None, socket.AF_INET)
-                for addr in addrs:
-                    ip = addr[4][0]
-                    if not ip.startswith("127."):
-                        interfaces.append((ip, if_name))
-                        break
-            except (socket.gaierror, OSError):
-                pass
-    except Exception:
-        pass
-    seen = set()
-    unique = []
-    for ip, name in interfaces:
-        if ip not in seen:
-            seen.add(ip)
-            unique.append((ip, name))
-    if unique:
-        return unique
-
     try:
         output = subprocess.check_output(
             "ipconfig", shell=True, stderr=subprocess.DEVNULL, timeout=5
@@ -211,6 +193,7 @@ def get_interfaces():
             unique.append((ip, name))
     if unique:
         return unique
+    # Fallback: gethostbyname
     try:
         hostname = socket.gethostname()
         ip = socket.gethostbyname(hostname)
@@ -829,18 +812,9 @@ class UzomaBoxAssistant:
         self.iface_var.set(items[0])
 
     def _populate_interfaces(self):
-        """Called by Refresh Adapters button — runs synchronously (user expects it)."""
-        ifaces = get_interfaces()
-        self._interface_map = {}
-        items = ["(auto)"]
-        for ip, name in ifaces:
-            label = "%s  (%s)" % (ip, name)
-            self._interface_map[label] = ip
-            items.append(label)
-        self.iface_combo["values"] = items
-        if not items:
-            items = ["(auto)"]
-        self.iface_var.set(items[0])
+        """Refresh Adapters button — runs in background to keep UI responsive."""
+        self.bottom_var.set("Searching adapters...")
+        threading.Thread(target=self._thread_populate_interfaces, daemon=True).start()
 
     # ---- Device Discovery ---------------------------------------------------
 
