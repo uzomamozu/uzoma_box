@@ -49,6 +49,9 @@ unsigned long sdFileSize(void);
 // ---- Seek (for re-playing) ------------------------------------------------
 bool sdFileSeek(unsigned long pos);
 
+// ---- Delete a file --------------------------------------------------------
+bool sdFileDelete(const char *filename);
+
 // ---- Initialise SD card ---------------------------------------------------
 bool sdInit(void);
 

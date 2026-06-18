@@ -17,8 +17,10 @@ Protocol (port 8888):
   Send:   PLAY:<filename.BIN>     → Receive: OK:<msg>
   Send:   PLAY:SEQUENCE           → Receive: OK:<msg>
   Send:   STOP                    → Receive: OK:stopped
-  Send:   CONFIG:key=value        → Receive: OK:<msg>  (reboots Teensy)
-  Send:   CONFIG:key=val1,val2..  → Receive: OK:<msg>  (reboots Teensy)
+  Send:   SPEED:1.5               → Receive: OK:speed set
+  Send:   LIST                    → Receive: OK:LIST + files + END:LIST
+  Send:   DELETE:filename.BIN     → Receive: OK:deleted
+  Send:   CONFIG:key=value        → Receive: OK:<msg>
 """
 
 import tkinter as tk
@@ -304,7 +306,7 @@ class UzomaBoxApp:
     def __init__(self, root):
         self.root = root
         root.title("UzomaBox Desktop Controller")
-        root.geometry("820x720")
+        root.geometry("820x750")
         root.resizable(True, True)
 
         self.send_queue = queue.Queue()
@@ -313,11 +315,12 @@ class UzomaBoxApp:
         self.client = None
         self.connected = False
         self._interface_map = {}  # maps combobox display string -> IP
+        self._file_list = []      # list of .BIN filenames
+        self._listening_list = False  # true while receiving LIST response
 
         self._build_ui()
         self._poll_queue()
-        # Populate network interface dropdown asynchronously to avoid blocking
-        # the GUI startup with subprocess calls (ipconfig can take seconds).
+        # Populate network interface dropdown asynchronously
         self.root.after(100, self._populate_interfaces)
 
     # ---- UI BUILDING ------------------------------------------------------
@@ -339,8 +342,6 @@ class UzomaBoxApp:
         self.iface_var = tk.StringVar()
         self.iface_combo = ttk.Combobox(conn_frame, textvariable=self.iface_var, width=26, state="readonly")
         self.iface_combo.grid(row=0, column=3, padx=(0,8))
-        # Initialise with (auto) immediately – populate asynchronously to avoid
-        # blocking the GUI with subprocess calls (ipconfig can take seconds).
         self.iface_combo["values"] = ["(auto)"]
         self.iface_var.set("(auto)")
 
@@ -369,13 +370,56 @@ class UzomaBoxApp:
         ttk.Radiobutton(mode_frame, text="Record",  variable=self.mode_var,
                          value="record",  command=self._on_mode_change).pack(side=tk.LEFT, padx=(0,12))
 
-        # ---- Action frame (Recording + Playback) --------------------------
-        action_frame = ttk.Frame(main_frame)
-        action_frame.pack(fill=tk.X, pady=(0, 8))
+        # ---- Playback & File Management frame -----------------------------
+        pb_frame = ttk.LabelFrame(main_frame, text="Playback & File Management", padding=8)
+        pb_frame.pack(fill=tk.X, pady=(0, 8))
 
-        # Recording sub-frame
-        rec_frame = ttk.LabelFrame(action_frame, text="Recording", padding=8)
-        rec_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        # Left: Playback controls
+        pb_left = ttk.Frame(pb_frame)
+        pb_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+
+        ttk.Label(pb_left, text="File:").grid(row=0, column=0, sticky=tk.W, padx=(0,4))
+        self.play_file_var = tk.StringVar()
+        ttk.Entry(pb_left, textvariable=self.play_file_var, width=22).grid(row=0, column=1, padx=(0,4))
+        ttk.Button(pb_left, text="▶ Play", command=self._on_play_file, width=8).grid(row=0, column=2, padx=(0,4))
+        ttk.Button(pb_left, text="▶▶ All", command=self._on_play_sequence, width=8).grid(row=0, column=3, padx=(0,4))
+        ttk.Button(pb_left, text="■ Stop", command=self._on_stop, width=8).grid(row=0, column=4)
+
+        # Speed slider row
+        ttk.Label(pb_left, text="Speed:").grid(row=1, column=0, sticky=tk.W, padx=(0,4), pady=(4,0))
+        self.speed_var = tk.DoubleVar(value=1.0)
+        speed_scale = ttk.Scale(pb_left, from_=0.05, to=5.0, orient=tk.HORIZONTAL,
+                                 variable=self.speed_var, command=self._on_speed_change,
+                                 length=180)
+        speed_scale.grid(row=1, column=1, columnspan=3, sticky=tk.W, pady=(4,0))
+        self.speed_label_var = tk.StringVar(value="1.00x")
+        ttk.Label(pb_left, textvariable=self.speed_label_var, width=8).grid(row=1, column=4, pady=(4,0))
+        ttk.Button(pb_left, text="Set", command=self._on_speed_set, width=6).grid(row=1, column=5, padx=(4,0), pady=(4,0))
+
+        # Right: File list
+        pb_right = ttk.Frame(pb_frame)
+        pb_right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        file_list_frame = ttk.Frame(pb_right)
+        file_list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.file_listbox = tk.Listbox(file_list_frame, height=5, font=("Consolas", 9),
+                                        exportselection=False)
+        file_scroll = ttk.Scrollbar(file_list_frame, orient=tk.VERTICAL, command=self.file_listbox.yview)
+        self.file_listbox.config(yscrollcommand=file_scroll.set)
+        self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        file_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.file_listbox.bind("<<ListboxSelect>>", self._on_file_select)
+
+        file_btn_frame = ttk.Frame(pb_right)
+        file_btn_frame.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(file_btn_frame, text="Refresh List", command=self._on_refresh_list).pack(side=tk.LEFT, padx=(0,4))
+        self.delete_btn = ttk.Button(file_btn_frame, text="Delete Selected", command=self._on_delete_file)
+        self.delete_btn.pack(side=tk.LEFT)
+
+        # ---- Recording ----------------------------------------------------
+        rec_frame = ttk.LabelFrame(main_frame, text="Recording", padding=8)
+        rec_frame.pack(fill=tk.X, pady=(0, 8))
 
         self.rec_start_btn = ttk.Button(rec_frame, text="▶ Start",
                                          command=self._on_rec_start)
@@ -385,19 +429,6 @@ class UzomaBoxApp:
         self.rec_stop_btn.pack(side=tk.LEFT)
         self.rec_status_var = tk.StringVar(value="Idle")
         ttk.Label(rec_frame, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(12, 0))
-
-        # Playback sub-frame
-        play_frame = ttk.LabelFrame(action_frame, text="Playback", padding=8)
-        play_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
-
-        self.play_file_var = tk.StringVar()
-        ttk.Entry(play_frame, textvariable=self.play_file_var, width=18).pack(side=tk.LEFT, padx=(0, 6))
-        self.play_btn = ttk.Button(play_frame, text="Play File", command=self._on_play_file)
-        self.play_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self.play_all_btn = ttk.Button(play_frame, text="Play All", command=self._on_play_sequence)
-        self.play_all_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self.stop_btn = ttk.Button(play_frame, text="Stop", command=self._on_stop)
-        self.stop_btn.pack(side=tk.LEFT)
 
         # ---- Configuration frame ------------------------------------------
         cfg_frame = ttk.LabelFrame(main_frame, text="Configuration", padding=8)
@@ -417,7 +448,7 @@ class UzomaBoxApp:
         status_frame = ttk.LabelFrame(main_frame, text="Status", padding=8)
         status_frame.pack(fill=tk.X, pady=(0, 8))
 
-        self.status_text = tk.Text(status_frame, height=4, wrap=tk.NONE, font=("Consolas", 9))
+        self.status_text = tk.Text(status_frame, height=3, wrap=tk.NONE, font=("Consolas", 9))
         self.status_text.pack(fill=tk.X, side=tk.LEFT, expand=True)
         status_scroll = ttk.Scrollbar(status_frame, orient=tk.VERTICAL, command=self.status_text.yview)
         status_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -432,7 +463,7 @@ class UzomaBoxApp:
         log_frame.pack(fill=tk.BOTH, expand=True)
 
         self.log_text = scrolledtext.ScrolledText(
-            log_frame, height=8, wrap=tk.WORD,
+            log_frame, height=6, wrap=tk.WORD,
             font=("Consolas", 9), state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
@@ -492,7 +523,6 @@ class UzomaBoxApp:
         if self.client:
             self.client.stop()
 
-        # Get the selected adapter IP (or None for auto)
         selected_label = self.iface_var.get()
         bind_ip = self._interface_map.get(selected_label)
 
@@ -567,6 +597,44 @@ class UzomaBoxApp:
         self.rec_stop_btn.config(state=tk.DISABLED)
         self.rec_status_var.set("Idle")
 
+    # ---- SPEED -----------------------------------------------------------
+
+    def _on_speed_change(self, *args):
+        val = self.speed_var.get()
+        self.speed_label_var.set("%.2fx" % val)
+
+    def _on_speed_set(self):
+        val = self.speed_var.get()
+        val = max(0.05, min(5.0, val))
+        self._send("SPEED:%.2f" % val)
+
+    # ---- FILE LIST & DELETE ----------------------------------------------
+
+    def _on_refresh_list(self):
+        self._send("LIST")
+        self._listening_list = True
+        self._file_list = []
+
+    def _on_file_select(self, event):
+        selection = self.file_listbox.curselection()
+        if selection:
+            idx = selection[0]
+            if idx < len(self._file_list):
+                self.play_file_var.set(self._file_list[idx])
+
+    def _on_delete_file(self):
+        selection = self.file_listbox.curselection()
+        if not selection:
+            messagebox.showerror("Error", "Select a file to delete first")
+            return
+        idx = selection[0]
+        if idx >= len(self._file_list):
+            return
+        fn = self._file_list[idx]
+        if not messagebox.askyesno("Delete File", "Delete %s?\nThis cannot be undone." % fn):
+            return
+        self._send("DELETE:%s" % fn)
+
     # ---- CONFIG ----------------------------------------------------------
 
     def _on_config_apply(self):
@@ -583,11 +651,8 @@ class UzomaBoxApp:
                                      "Continue?"):
             return
 
-        # Send color_order first — it applies live, no reboot.
-        # Then send the rest (ip causes reboot, subsequent commands are lost).
         self._send("CONFIG:color_order=%s" % color)
         self._send("CONFIG:ip=%s" % ip)
-        # Wait a moment, then send the rest (they queue up)
         time.sleep(0.05)
         self._send("CONFIG:mac=%s" % mac)
         self._send("CONFIG:led_width=%s" % led_w)
@@ -606,13 +671,32 @@ class UzomaBoxApp:
         try:
             while True:
                 resp = self.recv_queue.get_nowait()
-                self._update_status(resp)
+                self._process_response(resp)
         except queue.Empty:
             pass
         self.root.after(100, self._poll_queue)
 
+    def _process_response(self, resp):
+        # Handle LIST multi-line response
+        if self._listening_list:
+            if resp == "OK:LIST":
+                return  # start marker, ignore
+            if resp == "END:LIST":
+                self._listening_list = False
+                self._update_file_listbox()
+                return
+            # It's a filename
+            self._file_list.append(resp)
+            return
+
+        self._update_status(resp)
+
+    def _update_file_listbox(self):
+        self.file_listbox.delete(0, tk.END)
+        for fn in sorted(self._file_list):
+            self.file_listbox.insert(tk.END, fn)
+
     def _update_status(self, resp):
-        # Display raw status in the status text widget
         self.status_text.insert(tk.END, resp + "\n")
         self.status_text.see(tk.END)
 

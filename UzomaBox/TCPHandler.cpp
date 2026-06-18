@@ -107,6 +107,9 @@ int parseCommand(const char *cmd)
   else if (!strcmp(cmd, "PLAY:SEQUENCE"))  return CMD_PLAY_SEQUENCE;
   else if (!strcmp(cmd, "STOP"))           return CMD_STOP;
   else if (!strcmp(cmd, "STATUS"))         return CMD_STATUS;
+  else if (!strncmp(cmd, "SPEED:", 6))    return CMD_SPEED;
+  else if (!strcmp(cmd, "LIST"))           return CMD_LIST;
+  else if (!strncmp(cmd, "DELETE:", 7))    return CMD_DELETE;
   else if (!strcmp(cmd, "PING"))           return CMD_PING;
   else                                     return CMD_UNKNOWN;
 }

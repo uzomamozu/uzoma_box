@@ -22,6 +22,7 @@ struct AppConfig {
   uint16_t startUniverse[8];
   bool outputActive[8];
   ColorOrder colorOrder;
+  float playbackSpeed;                     // 0.05 – 5.0
 };
 
 bool loadConfig(AppConfig &cfg);

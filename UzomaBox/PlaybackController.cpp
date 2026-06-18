@@ -8,6 +8,7 @@ PlaybackController::PlaybackController()
   , _playlistIndex(0)
   , _framesPlayed(0)
   , _lastFrameTime(0)
+  , _speedMult(1.0f)
 {
   _currentFile[0] = 0;
 }
@@ -95,10 +96,16 @@ bool PlaybackController::playNextFrame(uint32_t *frameTimeUs, uint16_t *pixelCou
     uint16_t pixCount = header[1] | (header[2] << 8);   // number of pixels
     uint16_t frameTime = header[3] | (header[4] << 8);  // µs
 
+    // Scale frame time by speed multiplier:
+    //   _speedMult 0.05 → wait 20x longer (slow motion)
+    //   _speedMult 1.0  → normal speed
+    //   _speedMult 5.0  → wait 5x shorter (fast forward)
+    uint32_t scaledTime = (uint32_t)((float)frameTime / _speedMult);
+
     // Wait for frame timing
     uint32_t now = micros();
     uint32_t elapsed = now - _lastFrameTime;
-    while (elapsed < (uint32_t)frameTime) {
+    while (elapsed < scaledTime) {
       now = micros();
       elapsed = now - _lastFrameTime;
     }

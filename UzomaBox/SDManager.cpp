@@ -174,6 +174,13 @@ bool sdFileSeek(unsigned long pos)
   return g_file.seek(pos);
 }
 
+// ---- Delete a file ---------------------------------------------------------
+bool sdFileDelete(const char *filename)
+{
+  sdFileClose();   // make sure no file is open
+  return SD.remove(filename);
+}
+
 // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) -----------------
 bool sdInit(void)
 {

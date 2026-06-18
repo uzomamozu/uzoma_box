@@ -102,6 +102,9 @@ void setup()
   // ---- Apply color order from config ------------------------------------
   g_leds.setColorOrder(g_config.colorOrder);
 
+  // ---- Apply playback speed from config ---------------------------------
+  g_playback.setSpeed(g_config.playbackSpeed);
+
   // ---- Set initial mode -------------------------------------------------
   g_mode = g_config.mode;
   if (g_mode == MODE_PLAYBACK) {
@@ -375,6 +378,45 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       g_tcp.sendResponse("OK:stopped");
       break;
 
+    case CMD_SPEED: {
+      // cmdStr: "SPEED:1.5"
+      float speed = atof(cmdStr + 6);
+      if (speed >= 0.05f && speed <= 5.0f) {
+        g_playback.setSpeed(speed);
+        g_config.playbackSpeed = speed;
+        saveConfig(g_config);
+        g_tcp.sendResponse("OK:speed set");
+        Serial.printf("Playback speed: %.2f\n", speed);
+      } else {
+        g_tcp.sendResponse("ERR:speed out of range (0.05-5.0)");
+      }
+      break;
+    }
+
+    case CMD_LIST: {
+      // List all .BIN files on SD card
+      char names[64][16];
+      int count = sdListBinFiles(names, 64);
+      g_tcp.sendResponse("OK:LIST");
+      for (int i = 0; i < count; i++) {
+        g_tcp.sendResponse(names[i]);
+      }
+      g_tcp.sendResponse("END:LIST");
+      break;
+    }
+
+    case CMD_DELETE: {
+      // cmdStr: "DELETE:filename.BIN"
+      const char *fn = cmdStr + 7;
+      if (sdFileDelete(fn)) {
+        g_tcp.sendResponse("OK:deleted");
+        Serial.printf("Deleted: %s\n", fn);
+      } else {
+        g_tcp.sendResponse("ERR:could not delete");
+      }
+      break;
+    }
+
     case CMD_PING:
       g_tcp.sendResponse("PONG");
       break;
@@ -428,7 +470,7 @@ void setMode(OperatingMode newMode)
 
 void printStatus()
 {
-  char buf[312];
+  char buf[384];
   snprintf(buf, sizeof(buf),
     "mode=%s\r\n"
     "ip=%d.%d.%d.%d\r\n"
@@ -439,7 +481,8 @@ void printStatus()
     "file=%s\r\n"
     "frames=%lu\r\n"
     "artnet_active=%s\r\n"
-    "color_order=%s",
+    "color_order=%s\r\n"
+    "playback_speed=%.2f",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" : "record",
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
@@ -450,7 +493,8 @@ void printStatus()
     g_playback.currentFilename(),
     g_playback.framesPlayed(),
     g_artNet.isReceiving() ? "yes" : "no",
-    colorOrderStr(g_config.colorOrder)
+    colorOrderStr(g_config.colorOrder),
+    g_playback.getSpeed()
   );
   g_tcp.sendResponse(buf);
 }

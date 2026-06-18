@@ -53,6 +53,12 @@ public:
   // Check if recording is active
   bool isRecording() const { return _recording; }
 
+  // ---- Speed control ------------------------------------------------------
+
+  // Set playback speed multiplier (0.05 = 1/20x, 1.0 = normal, 5.0 = 5x)
+  void setSpeed(float mult) { _speedMult = constrain(mult, 0.05f, 5.0f); }
+  float getSpeed() const { return _speedMult; }
+
   // ---- Utility ------------------------------------------------------------
 
   // Get the current playback filename
@@ -77,6 +83,7 @@ private:
   int           _playlistIndex;
   uint32_t      _framesPlayed;
   uint32_t      _lastFrameTime;         // micros() at last frame
+  float         _speedMult;             // playback speed multiplier (0.05-5.0)
 };
 
 #endif
