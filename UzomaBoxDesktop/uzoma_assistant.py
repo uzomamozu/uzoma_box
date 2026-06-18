@@ -304,31 +304,116 @@ class DeviceConfigWindow:
     def _build_led_tab(self):
         frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(frame, text="LEDs")
-        ttk.Label(frame, text="LEDs per Strip:").grid(row=0, column=0, sticky=tk.W, padx=(0,8), pady=4)
+
+        # LEDs per strip + Color order at top
+        top_frame = ttk.Frame(frame)
+        top_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(top_frame, text="LEDs per Strip:").pack(side=tk.LEFT, padx=(0, 8))
         self.led_width_var = tk.StringVar(value="512")
-        ttk.Entry(frame, textvariable=self.led_width_var, width=12).grid(row=0, column=1, sticky=tk.W, pady=4)
-
-        ttk.Label(frame, text="Color Order:").grid(row=1, column=0, sticky=tk.W, padx=(0,8), pady=4)
+        ttk.Entry(top_frame, textvariable=self.led_width_var, width=8).pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(top_frame, text="Color Order:").pack(side=tk.LEFT, padx=(0, 8))
         self.color_order_var = tk.StringVar(value="rgb")
-        ttk.Combobox(frame, textvariable=self.color_order_var,
+        ttk.Combobox(top_frame, textvariable=self.color_order_var,
                       values=["rgb", "rbg", "grb", "gbr", "brg", "bgr"],
-                      width=10, state="readonly").grid(row=1, column=1, sticky=tk.W, pady=4)
+                      width=6, state="readonly").pack(side=tk.LEFT)
 
-        ttk.Label(frame, text="Start Univs:").grid(row=2, column=0, sticky=tk.W, padx=(0,8), pady=4)
-        self.start_univ_var = tk.StringVar(value="0,3,6,9,12,15,18,21")
-        ttk.Entry(frame, textvariable=self.start_univ_var, width=30).grid(row=2, column=1, sticky=tk.W, pady=4)
+        # Per-output table header
+        columns_frame = ttk.Frame(frame)
+        columns_frame.pack(fill=tk.X, pady=(0, 2))
+        # Column widths: Out=40, Active=50, StartUniv=80, StartCh=70, EndUniv=80, EndCh=70
+        ttk.Label(columns_frame, text="Out", font=("TkDefaultFont", 8, "bold"),
+                  width=5).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Label(columns_frame, text="Active", font=("TkDefaultFont", 8, "bold"),
+                  width=6).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(columns_frame, text="Start Univ", font=("TkDefaultFont", 8, "bold"),
+                  width=10).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(columns_frame, text="Start Ch", font=("TkDefaultFont", 8, "bold"),
+                  width=8).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(columns_frame, text="End Univ", font=("TkDefaultFont", 8, "bold"),
+                  width=10).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(columns_frame, text="End Ch", font=("TkDefaultFont", 8, "bold"),
+                  width=8).pack(side=tk.LEFT)
 
-        ttk.Label(frame, text="Outputs:").grid(row=3, column=0, sticky=tk.NW, padx=(0,8), pady=4)
-        self.output_vars = []
-        out_frame = ttk.Frame(frame)
-        out_frame.grid(row=3, column=1, sticky=tk.W, pady=4)
+        # Separator
+        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 4))
+
+        # 8 output rows
+        self.output_active_vars = []
+        self.start_univ_vars = []
+        self.end_univ_vars = []
+        self.end_ch_vars = []
+
         for i in range(8):
-            var = tk.BooleanVar(value=True)
-            self.output_vars.append(var)
-            ttk.Checkbutton(out_frame, text="%d" % (i+1), variable=var).pack(side=tk.LEFT, padx=2)
+            row_frame = ttk.Frame(frame)
+            row_frame.pack(fill=tk.X, pady=1)
 
+            # Out number
+            ttk.Label(row_frame, text="%d" % (i + 1), width=5).pack(side=tk.LEFT, padx=(2, 0))
+
+            # Active checkbox
+            active_var = tk.BooleanVar(value=True)
+            self.output_active_vars.append(active_var)
+            ttk.Checkbutton(row_frame, variable=active_var, width=4).pack(side=tk.LEFT, padx=(0, 4))
+
+            # Start Universe (dropdown)
+            start_var = tk.StringVar(value=str(i * 3))
+            self.start_univ_vars.append(start_var)
+            start_combo = ttk.Combobox(row_frame, textvariable=start_var,
+                                        values=[str(x) for x in range(0, 256)],
+                                        width=8, state="readonly")
+            start_combo.pack(side=tk.LEFT, padx=(0, 4))
+            start_combo.bind("<<ComboboxSelected>>", lambda e, idx=i: self._update_univ_range(idx))
+
+            # Start Channel (always 1, read-only)
+            ttk.Label(row_frame, text="1", width=8, anchor=tk.CENTER,
+                      font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
+
+            # End Universe (computed, read-only)
+            end_univ_var = tk.StringVar(value="--")
+            self.end_univ_vars.append(end_univ_var)
+            ttk.Label(row_frame, textvariable=end_univ_var, width=10, anchor=tk.CENTER,
+                      font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
+
+            # End Channel (computed, read-only)
+            end_ch_var = tk.StringVar(value="--")
+            self.end_ch_vars.append(end_ch_var)
+            ttk.Label(row_frame, textvariable=end_ch_var, width=8, anchor=tk.CENTER,
+                      font=("Consolas", 9)).pack(side=tk.LEFT)
+
+        # Also recompute when LEDs per strip changes
+        self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
+
+        # Initial computation
+        self._update_all_univ_ranges()
+
+        # Apply button
         ttk.Button(frame, text="Apply LED Settings (color live, rest reboots)",
-                   command=self._save_led).grid(row=4, column=0, columnspan=2, pady=12)
+                   command=self._save_led).pack(pady=12)
+
+    def _compute_univ_range(self, led_width, start_univ):
+        """Compute (end_univ, end_ch) for given LEDs and start universe."""
+        try:
+            pixels = int(led_width)
+            start = int(start_univ)
+        except (ValueError, TypeError):
+            return ("--", "--")
+        total_ch = pixels * 3
+        end_ch = ((total_ch - 1) % 512) + 1
+        end_univ = start + (total_ch - 1) // 512
+        return (str(end_univ), str(end_ch))
+
+    def _update_univ_range(self, idx):
+        """Recompute end_univ and end_ch for output idx."""
+        led_w = self.led_width_var.get()
+        start_u = self.start_univ_vars[idx].get()
+        end_u, end_ch = self._compute_univ_range(led_w, start_u)
+        self.end_univ_vars[idx].set(end_u)
+        self.end_ch_vars[idx].set(end_ch)
+
+    def _update_all_univ_ranges(self):
+        """Recompute end_univ and end_ch for all 8 outputs."""
+        for i in range(8):
+            self._update_univ_range(i)
 
     # ---- Control Tab (Tab 3) -----------------------------------------------
 
@@ -463,15 +548,19 @@ class DeviceConfigWindow:
     def _save_led(self):
         color = self.color_order_var.get().strip()
         led_w = self.led_width_var.get().strip()
-        univ = self.start_univ_var.get().strip()
-        outputs = ",".join("1" if v.get() else "0" for v in self.output_vars)
+        univ = ",".join(v.get() for v in self.start_univ_vars)
+        outputs = ",".join("1" if v.get() else "0" for v in self.output_active_vars)
 
         # Color order applies live first (no reboot needed)
         self._cmd_send("CONFIG:color_order=%s" % color)
         time.sleep(0.1)
-        # Reboot-required configs
-        self._cmd_send("CONFIG:led_width=%s" % led_w)
+
+        # Send start_universe FIRST among reboot-required configs so it gets
+        # saved to CONFIG.TXT before the first reboot-triggering command.
+        # led_width and output_active cause reboots too, so they go after.
         self._cmd_send("CONFIG:start_universe=%s" % univ)
+        time.sleep(0.05)
+        self._cmd_send("CONFIG:led_width=%s" % led_w)
         self._cmd_send("CONFIG:output_active=%s" % outputs)
         self.status_var.set("LED settings queued (color live, reboot pending)")
         self.log("LED settings updated on %s" % self.ip)
@@ -598,7 +687,12 @@ class DeviceConfigWindow:
         elif k == "led_width":
             self.led_width_var.set(v)
         elif k == "start_universe":
-            self.start_univ_var.set(v)
+            # Parse comma-separated universes into per-output dropdowns
+            parts = v.split(",")
+            for i, p in enumerate(parts):
+                if i < 8:
+                    self.start_univ_vars[i].set(p.strip())
+            self._update_all_univ_ranges()
         elif k == "record_fps":
             self.record_fps_var.set(v)
         elif k == "mode":
