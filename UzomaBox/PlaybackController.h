@@ -53,6 +53,11 @@ public:
   // Check if recording is active
   bool isRecording() const { return _recording; }
 
+  // ---- Recording time (elapsed seconds) ----------------------------------
+  uint32_t getRecordTime() const {
+    return _recording ? ((millis() - _recordStartMs) / 1000) : 0;
+  }
+
   // ---- Speed control ------------------------------------------------------
 
   // Set playback speed multiplier (0.05 = 1/20x, 1.0 = normal, 5.0 = 5x)
@@ -87,6 +92,7 @@ private:
   int           _playlistIndex;
   uint32_t      _framesPlayed;
   uint32_t      _lastFrameTime;         // micros() at last frame
+  uint32_t      _recordStartMs;         // millis() when recording started
   float         _speedMult;             // playback speed multiplier (0.05-5.0)
 };
 

@@ -9,6 +9,7 @@ PlaybackController::PlaybackController()
   , _framesPlayed(0)
   , _lastFrameTime(0)
   , _speedMult(1.0f)
+  , _recordStartMs(0)
 {
   _currentFile[0] = 0;
 }
@@ -170,6 +171,7 @@ bool PlaybackController::startRecording()
   _currentFile[15] = 0;
   _recording = true;
   _framesPlayed = 0;
+  _recordStartMs = millis();
   return true;
 }
 

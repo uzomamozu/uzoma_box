@@ -439,6 +439,8 @@ class UzomaBoxApp:
         self.rec_stop_btn.pack(side=tk.LEFT)
         self.rec_status_var = tk.StringVar(value="Idle")
         ttk.Label(rec_frame, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(12, 0))
+        self.rec_timer_var = tk.StringVar(value="")
+        ttk.Label(rec_frame, textvariable=self.rec_timer_var, width=10).pack(side=tk.LEFT)
 
         # ---- Configuration frame ------------------------------------------
         cfg_frame = ttk.LabelFrame(main_frame, text="Configuration", padding=8)
@@ -728,6 +730,14 @@ class UzomaBoxApp:
                 total = int(line.split("=", 1)[1])
                 self._last_file_total = total
                 self._update_progress_bar()
+            except (ValueError, IndexError):
+                pass
+        elif line.startswith("record_time="):
+            try:
+                secs = int(line.split("=", 1)[1])
+                mins = secs // 60
+                secs = secs % 60
+                self.rec_timer_var.set("%02d:%02d" % (mins, secs))
             except (ValueError, IndexError):
                 pass
         elif line.startswith("playing="):

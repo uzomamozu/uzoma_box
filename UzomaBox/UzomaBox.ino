@@ -494,6 +494,7 @@ void printStatus()
     "color_order=%s\r\n"
     "playback_speed=%.2f\r\n"
     "record_fps=%u\r\n"
+    "record_time=%lu\r\n"
     "file_pos=%lu\r\n"
     "file_total=%lu",
     (g_mode == MODE_ARTNET)   ? "artnet" :
@@ -509,6 +510,7 @@ void printStatus()
     colorOrderStr(g_config.colorOrder),
     g_playback.getSpeed(),
     g_config.recordFps,
+    g_playback.getRecordTime(),
     (g_playback.isPlaying() ? g_playback.filePosition() : 0),
     (g_playback.isPlaying() ? g_playback.fileSize() : 0)
   );
