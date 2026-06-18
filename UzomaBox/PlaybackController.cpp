@@ -79,12 +79,20 @@ bool PlaybackController::playNextFrame(uint32_t *frameTimeUs, uint16_t *pixelCou
 
   uint8_t header[BIN_FRAME_HEADER_LEN];
   if (!sdCardRead(header, BIN_FRAME_HEADER_LEN)) {
-    // End of file – try next in sequence or stop
+    // End of file – loop back to beginning
     sdFileClose();
     if (_playlistCount > 0) {
-      // Sequential mode – open next file
+      // Sequence mode: rewind to first file
+      _playlistIndex = 0;
       if (openNextFile()) {
-        // Try reading again from new file
+        return playNextFrame(frameTimeUs);
+      }
+    } else {
+      // Single file mode: reopen the same file
+      const char *fn = _currentFile;
+      if (sdFileOpen(fn, FILE_READ)) {
+        _lastFrameTime = micros();
+        _framesPlayed = 0;
         return playNextFrame(frameTimeUs);
       }
     }
