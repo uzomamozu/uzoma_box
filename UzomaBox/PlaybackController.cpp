@@ -77,64 +77,68 @@ bool PlaybackController::playNextFrame(uint32_t *frameTimeUs, uint16_t *pixelCou
 {
   if (!_playing) return false;
 
-  uint8_t header[BIN_FRAME_HEADER_LEN];
-  if (!sdCardRead(header, BIN_FRAME_HEADER_LEN)) {
-    // End of file – loop back to beginning
-    sdFileClose();
-    if (_playlistCount > 0) {
-      // Sequence mode: rewind to first file
-      _playlistIndex = 0;
-      if (openNextFile()) {
-        return playNextFrame(frameTimeUs);
+  // Use an iterative loop instead of recursion to prevent stack overflow
+  // when looping files or skipping many audio frames.
+  while (true) {
+
+    uint8_t header[BIN_FRAME_HEADER_LEN];
+    if (!sdCardRead(header, BIN_FRAME_HEADER_LEN)) {
+      // End of file – loop back to beginning
+      sdFileClose();
+      if (_playlistCount > 0) {
+        // Sequence mode: rewind to first file
+        _playlistIndex = 0;
+        if (openNextFile()) {
+          continue;   // try again from new file
+        }
+      } else {
+        // Single file mode: reopen the same file
+        const char *fn = _currentFile;
+        if (sdFileOpen(fn, FILE_READ)) {
+          _lastFrameTime = micros();
+          _framesPlayed = 0;
+          continue;   // try again from start of file
+        }
       }
+      stop();
+      return false;
+    }
+
+    if (header[0] == BIN_HEADER_VIDEO) {
+      uint16_t pixCount = header[1] | (header[2] << 8);   // number of pixels
+      uint16_t frameTime = header[3] | (header[4] << 8);  // µs
+
+      // Scale frame time by speed multiplier:
+      //   _speedMult 0.05 → wait 20x longer (slow motion)
+      //   _speedMult 1.0  → normal speed
+      //   _speedMult 5.0  → wait 5x shorter (fast forward)
+      uint32_t scaledTime = (uint32_t)((float)frameTime / _speedMult);
+
+      // Wait for frame timing
+      uint32_t now = micros();
+      uint32_t elapsed = now - _lastFrameTime;
+      while (elapsed < scaledTime) {
+        now = micros();
+        elapsed = now - _lastFrameTime;
+      }
+      _lastFrameTime = now;
+      _framesPlayed++;
+
+      if (frameTimeUs) *frameTimeUs = frameTime;
+      if (pixelCount)  *pixelCount  = pixCount;
+      return true;
+
+    } else if (header[0] == BIN_HEADER_AUDIO) {
+      // Audio frame – skip it (we don't play audio)
+      uint16_t audioSize = (header[1] | (header[2] << 8)) * 2;
+      sdCardSkip(audioSize);
+      continue;   // try next frame
+
     } else {
-      // Single file mode: reopen the same file
-      const char *fn = _currentFile;
-      if (sdFileOpen(fn, FILE_READ)) {
-        _lastFrameTime = micros();
-        _framesPlayed = 0;
-        return playNextFrame(frameTimeUs);
-      }
+      // Unknown header – skip 1 byte and retry (should not happen)
+      sdCardSkip(1);
+      continue;   // try next frame
     }
-    stop();
-    return false;
-  }
-
-  if (header[0] == BIN_HEADER_VIDEO) {
-    uint16_t pixCount = header[1] | (header[2] << 8);   // number of pixels
-    uint16_t frameTime = header[3] | (header[4] << 8);  // µs
-
-    // Scale frame time by speed multiplier:
-    //   _speedMult 0.05 → wait 20x longer (slow motion)
-    //   _speedMult 1.0  → normal speed
-    //   _speedMult 5.0  → wait 5x shorter (fast forward)
-    uint32_t scaledTime = (uint32_t)((float)frameTime / _speedMult);
-
-    // Wait for frame timing
-    uint32_t now = micros();
-    uint32_t elapsed = now - _lastFrameTime;
-    while (elapsed < scaledTime) {
-      now = micros();
-      elapsed = now - _lastFrameTime;
-    }
-    _lastFrameTime = now;
-    _framesPlayed++;
-
-    if (frameTimeUs) *frameTimeUs = frameTime;
-    if (pixelCount)  *pixelCount  = pixCount;
-    return true;
-
-  } else if (header[0] == BIN_HEADER_AUDIO) {
-    // Audio frame – skip it (we don't play audio)
-    uint16_t audioSize = (header[1] | (header[2] << 8)) * 2;
-    sdCardSkip(audioSize);
-    // Recursively get the next real frame
-    return playNextFrame(frameTimeUs);
-
-  } else {
-    // Unknown header – skip 1 byte and retry (should not happen)
-    sdCardSkip(1);
-    return playNextFrame(frameTimeUs);
   }
 }
 
