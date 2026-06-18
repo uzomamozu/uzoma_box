@@ -316,6 +316,9 @@ class UzomaBoxApp:
 
         self._build_ui()
         self._poll_queue()
+        # Populate network interface dropdown asynchronously to avoid blocking
+        # the GUI startup with subprocess calls (ipconfig can take seconds).
+        self.root.after(100, self._populate_interfaces)
 
     # ---- UI BUILDING ------------------------------------------------------
 
@@ -336,12 +339,10 @@ class UzomaBoxApp:
         self.iface_var = tk.StringVar()
         self.iface_combo = ttk.Combobox(conn_frame, textvariable=self.iface_var, width=26, state="readonly")
         self.iface_combo.grid(row=0, column=3, padx=(0,8))
-        try:
-            self._populate_interfaces()
-        except Exception:
-            # If interface enumeration fails, still show the dropdown with (auto)
-            self.iface_combo["values"] = ["(auto)"]
-            self.iface_var.set("(auto)")
+        # Initialise with (auto) immediately – populate asynchronously to avoid
+        # blocking the GUI with subprocess calls (ipconfig can take seconds).
+        self.iface_combo["values"] = ["(auto)"]
+        self.iface_var.set("(auto)")
 
         self.connect_btn = ttk.Button(conn_frame, text="Connect", command=self._on_connect)
         self.connect_btn.grid(row=0, column=4, padx=(0,4))
