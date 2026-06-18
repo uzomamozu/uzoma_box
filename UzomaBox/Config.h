@@ -7,6 +7,8 @@
 #include "LEDController.h"
 
 #define CONFIG_FILENAME "CONFIG.TXT"
+#define MODEL_STRING    "UzomaBox T4.1"
+#define FW_VERSION      "1.0.0"
 
 enum OperatingMode {
   MODE_ARTNET = 0,
@@ -24,6 +26,7 @@ struct AppConfig {
   ColorOrder colorOrder;
   float playbackSpeed;                     // 0.05 – 5.0
   uint16_t recordFps;                      // Recording FPS (5-60)
+  char nickname[32];                       // User-assignable device name
 };
 
 bool loadConfig(AppConfig &cfg);

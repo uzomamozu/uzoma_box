@@ -21,6 +21,7 @@
 #include "ArtNetHandler.h"
 #include "TCPHandler.h"
 #include "PlaybackController.h"
+#include "UdpDiscovery.h"
 
 // ========================  GLOBAL OBJECTS  ================================
 
@@ -29,6 +30,7 @@ LEDController      g_leds;
 ArtNetHandler      g_artNet;
 TCPHandler         g_tcp;
 PlaybackController g_playback;
+UdpDiscovery       g_discovery;
 
 // Current operating mode
 OperatingMode      g_mode = MODE_ARTNET;
@@ -99,6 +101,10 @@ void setup()
   g_tcp.begin();
   Serial.println("TCP server on port 8888");
 
+  // ---- Initialise UDP discovery ------------------------------------------
+  g_discovery.begin();
+  Serial.println("UDP discovery on port 7777");
+
   // ---- Apply color order from config ------------------------------------
   g_leds.setColorOrder(g_config.colorOrder);
 
@@ -129,6 +135,10 @@ void loop()
   if (cmd != CMD_NONE) {
     handleTcpCommand(cmd, cmdBuffer);
   }
+
+  // ---- Poll UDP discovery -----------------------------------------------
+  g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
+                   Ethernet.localIP(), 0);
 
   // ---- Mode-specific behaviour ------------------------------------------
 
@@ -351,6 +361,12 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         } else {
           g_tcp.sendResponse("ERR:record_fps must be 5-60");
         }
+      } else if (!strncmp(kv, "nickname=", 9)) {
+        strncpy(g_config.nickname, kv + 9, sizeof(g_config.nickname) - 1);
+        g_config.nickname[sizeof(g_config.nickname) - 1] = 0;
+        saveConfig(g_config);
+        g_tcp.sendResponse("OK:nickname updated (live)");
+        Serial.printf("Nickname set to: %s\n", g_config.nickname);
       } else {
         g_tcp.sendResponse("ERR:unknown config key");
       }
@@ -426,6 +442,18 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       }
       break;
     }
+
+    case CMD_IDENTIFY:
+      Serial.println("IDENTIFY: flashing LED");
+      g_tcp.sendResponse("OK:identify");
+      {
+        pinMode(LED_BUILTIN, OUTPUT);
+        for (int i = 0; i < 10; i++) {
+          digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+          delay(200);
+        }
+      }
+      break;
 
     case CMD_PING:
       g_tcp.sendResponse("PONG");

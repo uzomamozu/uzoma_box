@@ -16,6 +16,8 @@ void configSetDefaults(AppConfig &cfg)
   cfg.colorOrder      = ORDER_RGB;
   cfg.playbackSpeed   = 1.0f;
   cfg.recordFps       = 30;
+  strncpy(cfg.nickname, "UzomaBox", sizeof(cfg.nickname));
+  cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
 
   // Default start universes per strip: 0, 3, 6, 9, 12, 15, 18, 21
   for (int i = 0; i < 8; i++) {
@@ -118,6 +120,10 @@ bool loadConfig(AppConfig &cfg)
       int fps = atoi(value);
       if (fps >= 5 && fps <= 60) cfg.recordFps = (uint16_t)fps;
     }
+    else if (!strcmp(key, "nickname")) {
+      strncpy(cfg.nickname, value, sizeof(cfg.nickname) - 1);
+      cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
+    }
   }
 
   sdFileClose();
@@ -163,6 +169,7 @@ bool saveConfig(const AppConfig &cfg)
   sdFilePrintf("color_order=%s\n", colorOrderStr(cfg.colorOrder));
   sdFilePrintf("playback_speed=%.2f\n", cfg.playbackSpeed);
   sdFilePrintf("record_fps=%u\n", cfg.recordFps);
+  sdFilePrintf("nickname=%s\n", cfg.nickname);
 
   sdFileClose();
   return true;
