@@ -15,6 +15,7 @@ void configSetDefaults(AppConfig &cfg)
   cfg.ledWidth        = 512;
   cfg.colorOrder      = ORDER_RGB;
   cfg.playbackSpeed   = 1.0f;
+  cfg.recordFps       = 30;
 
   // Default start universes per strip: 0, 3, 6, 9, 12, 15, 18, 21
   for (int i = 0; i < 8; i++) {
@@ -113,6 +114,10 @@ bool loadConfig(AppConfig &cfg)
       float spd = atof(value);
       if (spd >= 0.05f && spd <= 5.0f) cfg.playbackSpeed = spd;
     }
+    else if (!strcmp(key, "record_fps")) {
+      int fps = atoi(value);
+      if (fps >= 5 && fps <= 60) cfg.recordFps = (uint16_t)fps;
+    }
   }
 
   sdFileClose();
@@ -157,6 +162,7 @@ bool saveConfig(const AppConfig &cfg)
 
   sdFilePrintf("color_order=%s\n", colorOrderStr(cfg.colorOrder));
   sdFilePrintf("playback_speed=%.2f\n", cfg.playbackSpeed);
+  sdFilePrintf("record_fps=%u\n", cfg.recordFps);
 
   sdFileClose();
   return true;

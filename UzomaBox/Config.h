@@ -23,6 +23,7 @@ struct AppConfig {
   bool outputActive[8];
   ColorOrder colorOrder;
   float playbackSpeed;                     // 0.05 – 5.0
+  uint16_t recordFps;                      // Recording FPS (5-60)
 };
 
 bool loadConfig(AppConfig &cfg);

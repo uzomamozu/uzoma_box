@@ -219,14 +219,13 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
   g_leds.fillFrame(rgbData, totalPixels);
   g_leds.show();
 
-  // If recording, write frame to .BIN file
+  // If recording, write frame to .BIN file with fixed frame time
   if (g_recordingActive) {
-    uint32_t now = micros();
-    uint32_t dt  = (g_lastArtNetFrame == 0) ? 0 : (now - g_lastArtNetFrame);
-    g_lastArtNetFrame = now;
-    if (dt > 100000) dt = 16666;   // clamp to ~60 fps max if gap too large
-
-    g_playback.writeFrame(rgbData, totalPixels, dt);
+    // Use a fixed frame time based on the configured recording FPS.
+    // This ensures all frames are evenly spaced and playback at 1x
+    // reproduces the exact same frame rate as recording.
+    uint32_t frameTimeUs = 1000000 / g_config.recordFps;
+    g_playback.writeFrame(rgbData, totalPixels, frameTimeUs);
   }
 
   g_frameCounter++;
@@ -341,6 +340,17 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         saveConfig(g_config);
         g_tcp.sendResponse("OK:color_order updated (live)");
         Serial.printf("Color order set to: %s\n", colorOrderStr(order));
+      } else if (!strncmp(kv, "record_fps=", 11)) {
+        int fps = atoi(kv + 11);
+        if (fps >= 5 && fps <= 60) {
+          g_config.recordFps = (uint16_t)fps;
+          saveConfig(g_config);
+          g_tcp.sendResponse("OK:record_fps updated – rebooting");
+          delay(100);
+          rebootTeensy();
+        } else {
+          g_tcp.sendResponse("ERR:record_fps must be 5-60");
+        }
       } else {
         g_tcp.sendResponse("ERR:unknown config key");
       }
@@ -482,7 +492,8 @@ void printStatus()
     "frames=%lu\r\n"
     "artnet_active=%s\r\n"
     "color_order=%s\r\n"
-    "playback_speed=%.2f",
+    "playback_speed=%.2f\r\n"
+    "record_fps=%u",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" : "record",
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
@@ -494,7 +505,8 @@ void printStatus()
     g_playback.framesPlayed(),
     g_artNet.isReceiving() ? "yes" : "no",
     colorOrderStr(g_config.colorOrder),
-    g_playback.getSpeed()
+    g_playback.getSpeed(),
+    g_config.recordFps
   );
   g_tcp.sendResponse(buf);
 }
