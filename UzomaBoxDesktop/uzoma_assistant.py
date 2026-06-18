@@ -551,7 +551,14 @@ class DeviceConfigWindow:
         self.log("Speed %.2fx on %s" % (speed, self.ip))
 
     def _refresh_list(self):
-        lines = self._cmd("LIST")
+        # Use a separate temporary connection to avoid mixing LIST response
+        # with STATUS poll data from the persistent connection
+        try:
+            c = TcpClientPersistent(self.ip, timeout=4.0)
+            lines = c.send_and_recv("LIST")
+            c.close()
+        except Exception:
+            lines = []
         files = [l for l in lines if not l.startswith("OK:") and not l.startswith("END:")]
         self._file_list = files
         self.file_listbox.delete(0, tk.END)
