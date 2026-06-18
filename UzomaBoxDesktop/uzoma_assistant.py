@@ -723,7 +723,8 @@ class UzomaBoxAssistant:
                 pass
 
         self._build_ui()
-        self.root.after(100, self._populate_interfaces)
+        # Run interface detection in background thread — ipconfig can take seconds
+        threading.Thread(target=self._thread_populate_interfaces, daemon=True).start()
 
     # ---- UI BUILDING -------------------------------------------------------
 
@@ -809,7 +810,26 @@ class UzomaBoxAssistant:
 
     # ---- Interface Population -----------------------------------------------
 
+    def _thread_populate_interfaces(self):
+        """Run get_interfaces() in a background thread, then update UI on main thread."""
+        ifaces = get_interfaces()
+        self.root.after(0, lambda: self._update_interfaces(ifaces))
+
+    def _update_interfaces(self, ifaces):
+        """Update the adapter dropdown (must be called on main thread)."""
+        self._interface_map = {}
+        items = ["(auto)"]
+        for ip, name in ifaces:
+            label = "%s  (%s)" % (ip, name)
+            self._interface_map[label] = ip
+            items.append(label)
+        self.iface_combo["values"] = items
+        if not items:
+            items = ["(auto)"]
+        self.iface_var.set(items[0])
+
     def _populate_interfaces(self):
+        """Called by Refresh Adapters button — runs synchronously (user expects it)."""
         ifaces = get_interfaces()
         self._interface_map = {}
         items = ["(auto)"]
