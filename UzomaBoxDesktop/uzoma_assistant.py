@@ -104,21 +104,35 @@ class TcpClientPersistent:
         """
         Send a command and return all response lines.
         Thread-safe via lock.
+        Uses a small recv timeout to drain the TCP socket completely,
+        preventing stale data from bleeding across commands.
         """
         with self.lock:
             if not self.sock:
                 self.connect()
-            self.sock.sendall((cmd + "\n").encode("utf-8"))
+            # Set a short timeout so we can detect "no more data"
+            orig_timeout = self.sock.gettimeout()
+            self.sock.settimeout(0.3)  # 300 ms drain timeout
+            try:
+                self.sock.sendall((cmd + "\n").encode("utf-8"))
+            except:
+                pass
             lines = []
             buf = b""
             try:
                 while True:
-                    chunk = self.sock.recv(4096)
-                    if not chunk:
+                    try:
+                        chunk = self.sock.recv(4096)
+                        if not chunk:
+                            break
+                        buf += chunk
+                    except socket.timeout:
+                        # No more data within 300 ms — drain complete
                         break
-                    buf += chunk
-                    while b"\n" in buf or b"\r" in buf:
+                    # Process all complete lines from the buffer
+                    while True:
                         idx = -1
+                        sep_len = 0
                         for sep in (b"\r\n", b"\n", b"\r"):
                             i = buf.find(sep)
                             if i >= 0 and (idx < 0 or i < idx):
@@ -130,10 +144,11 @@ class TcpClientPersistent:
                         buf = buf[idx + sep_len:]
                         if line:
                             lines.append(line)
-                    if b"\n" not in buf and b"\r" not in buf:
-                        break
-            except socket.timeout:
+            except Exception:
                 pass
+            finally:
+                # Restore original timeout (or default 5.0s)
+                self.sock.settimeout(orig_timeout if orig_timeout else 5.0)
             return lines
 
     def send_only(self, cmd):
@@ -430,7 +445,7 @@ class DeviceConfigWindow:
         self.mode_var = tk.StringVar(value="artnet")
         mode_frame = ttk.Frame(frame)
         mode_frame.grid(row=0, column=1, sticky=tk.W, pady=4)
-        for mode in [("ArtNet", "artnet"), ("Playback", "playback"), ("Record", "record")]:
+        for mode in [("ArtNet", "artnet"), ("Playback", "playback"), ("Record", "record"), ("Test", "test")]:
             ttk.Radiobutton(mode_frame, text=mode[0], variable=self.mode_var,
                              value=mode[1], command=self._change_mode).pack(side=tk.LEFT, padx=(0,12))
 
@@ -629,15 +644,22 @@ class DeviceConfigWindow:
         self.log("Speed %.2fx on %s" % (speed, self.ip))
 
     def _refresh_list(self):
-        # Use a separate temporary connection to avoid mixing LIST response
-        # with STATUS poll data from the persistent connection
-        try:
-            c = TcpClientPersistent(self.ip, timeout=4.0)
-            lines = c.send_and_recv("LIST")
-            c.close()
-        except Exception:
-            lines = []
-        files = [l for l in lines if not l.startswith("OK:") and not l.startswith("END:")]
+        # Use the persistent TCP connection (locked, single-client firmware)
+        lines = self._cmd("LIST")
+        # Filter: exclude OK/END markers, exclude STATUS key=value lines,
+        # and only keep lines that look like filenames (contain a dot or are
+        # reasonable 8.3-style SD card filenames).
+        files = []
+        for l in lines:
+            if l.startswith("OK:") or l.startswith("END:"):
+                continue
+            # Skip STATUS key=value lines (e.g. "mode=artnet", "ip=192...")
+            if "=" in l:
+                continue
+            # Skip empty lines
+            if not l.strip():
+                continue
+            files.append(l)
         self._file_list = files
         self.file_listbox.delete(0, tk.END)
         for fn in sorted(files):
@@ -771,7 +793,7 @@ class DeviceConfigWindow:
                         self._parse_status_line(line)
                 except Exception:
                     self._set_conn_red()
-                self.after_id = self.win.after(5000, self._poll_status)
+                self.after_id = self.win.after(100, self._poll_status)
         except tk.TclError:
             pass
 
