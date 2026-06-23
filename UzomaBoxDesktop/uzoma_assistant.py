@@ -286,14 +286,14 @@ class DeviceConfigWindow:
         # Table header
         columns_frame = ttk.Frame(frame)
         columns_frame.pack(fill=tk.X, pady=(0, 2))
-        for txt, w in [("Out",5),("Active",6),("Start Univ",10),("Start Ch",8),("End Univ",10),("End Ch",8)]:
+        for txt, w in [("Out",5),("Active",6),("Start Univ",10),("Start Ch",8),("End Univ",10),("Subnet/Univ",10)]:
             ttk.Label(columns_frame, text=txt, font=("TkDefaultFont", 8, "bold"),
                       width=w).pack(side=tk.LEFT, padx=(2, 4))
         ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 4))
         self.output_active_vars = []
         self.start_univ_vars = []
         self.end_univ_vars = []
-        self.end_ch_vars = []
+        self.subnet_univ_vars = []
         for i in range(8):
             row_frame = ttk.Frame(frame)
             row_frame.pack(fill=tk.X, pady=1)
@@ -313,9 +313,9 @@ class DeviceConfigWindow:
             self.end_univ_vars.append(euv)
             ttk.Label(row_frame, textvariable=euv, width=10, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
-            ecv = tk.StringVar(value="--")
-            self.end_ch_vars.append(ecv)
-            ttk.Label(row_frame, textvariable=ecv, width=8, anchor=tk.CENTER,
+            suv = tk.StringVar(value="--")
+            self.subnet_univ_vars.append(suv)
+            ttk.Label(row_frame, textvariable=suv, width=10, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT)
         self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
         self._update_all_univ_ranges()
@@ -342,7 +342,14 @@ class DeviceConfigWindow:
         start_u = self.start_univ_vars[idx].get()
         end_u, end_ch = self._compute_univ_range(led_w, start_u)
         self.end_univ_vars[idx].set(end_u)
-        self.end_ch_vars[idx].set(end_ch)
+        # Compute ArtNet subnet and universe from start universe
+        try:
+            su = int(start_u)
+            subnet = (su >> 4) & 0x0F
+            univ = su & 0x0F
+            self.subnet_univ_vars[idx].set("%d:%d" % (subnet, univ))
+        except (ValueError, TypeError):
+            self.subnet_univ_vars[idx].set("--")
 
     def _update_all_univ_ranges(self):
         for i in range(8):
