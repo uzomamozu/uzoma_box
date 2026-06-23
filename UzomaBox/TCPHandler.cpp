@@ -120,5 +120,7 @@ int parseCommand(const char *cmd)
   else if (!strncmp(cmd, "DELETE:", 7))    return CMD_DELETE;
   else if (!strcmp(cmd, "IDENTIFY"))       return CMD_IDENTIFY;
   else if (!strcmp(cmd, "PING"))           return CMD_PING;
+  else if (!strncmp(cmd, "COMMAND:TEST_PATTERN=", 20)) return CMD_TEST_PATTERN;
+  else if (!strncmp(cmd, "COMMAND:TEST_OUTPUT=", 20))  return CMD_TEST_OUTPUT;
   else                                     return CMD_UNKNOWN;
 }
