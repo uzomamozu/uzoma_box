@@ -195,7 +195,6 @@ class DeviceConfigWindow:
         self._file_list = []
         self._progress_active = False
         self._start_univ_dirty = [False] * 8
-        self._speed_dirty = False
 
         self._tcp = TcpClientPersistent(self.ip, timeout=3.0)
         try:
@@ -455,7 +454,7 @@ class DeviceConfigWindow:
         pat_frame.pack(fill=tk.X, pady=(0,8))
         self.test_pattern_var = tk.StringVar(value="RGBW Cycle")
         self.test_pattern_var.trace_add("write", lambda *a: self._send_test_pattern())
-        patterns = ["RGBW Cycle", "Rainbow Fade", "Plain Red", "Plain Green", "Plain Blue"]
+        patterns = ["RGBW Cycle", "Color Fade", "Red", "Green", "Blue"]
         for pat in patterns:
             ttk.Radiobutton(pat_frame, text=pat, variable=self.test_pattern_var,
                             value=pat).pack(anchor=tk.W, padx=(8,0), pady=1)
@@ -472,6 +471,7 @@ class DeviceConfigWindow:
                         value=False, command=self._on_test_output_toggle).pack(side=tk.LEFT)
         self.test_output_combo = ttk.Combobox(single_frame, values=[str(i+1) for i in range(8)],
                                               width=4, state="readonly")
+        self.test_output_combo.bind("<<ComboboxSelected>>", lambda e: self._send_test_output())
         self.test_output_combo.pack(side=tk.LEFT, padx=(4,0))
         self.test_output_combo.set("1")
         self.test_output_combo.config(state=tk.DISABLED)
@@ -499,8 +499,8 @@ class DeviceConfigWindow:
 
     def _send_test_pattern(self):
         """Send the current pattern to the Teensy immediately."""
-        pattern_map = {"RGBW Cycle": "0", "Rainbow Fade": "1", "Plain Red": "2",
-                       "Plain Green": "3", "Plain Blue": "4"}
+        pattern_map = {"RGBW Cycle": "0", "Color Fade": "1", "Red": "2",
+                       "Green": "3", "Blue": "4"}
         pat = pattern_map.get(self.test_pattern_var.get(), "0")
         self._cmd_send("COMMAND:TEST_PATTERN=%s" % pat)
 
@@ -624,14 +624,12 @@ class DeviceConfigWindow:
         self.log("Stop on %s" % self.ip)
 
     def _on_speed_change(self, *args):
-        self._speed_dirty = True
         self.speed_label_var.set("%.2fx" % self.speed_var.get())
 
     def _set_speed(self):
         speed = self.speed_var.get()
         speed = max(0.2, min(2.0, speed))
         self._cmd_send("SPEED:%.2f" % speed)
-        self._speed_dirty = False
         self.log("Speed %.2fx on %s" % (speed, self.ip))
 
     def _refresh_list(self):
@@ -717,8 +715,7 @@ class DeviceConfigWindow:
                 pass
         elif k == "playback_speed":
             try:
-                if not self._speed_dirty:
-                    self.speed_var.set(float(v))
+                # Only update label from STATUS, not the slider thumb
                 self.speed_label_var.set("%.2fx" % float(v))
             except:
                 pass
