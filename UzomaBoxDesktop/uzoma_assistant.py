@@ -389,19 +389,59 @@ class DeviceConfigWindow:
         # Recording controls
         rec_frame = ttk.LabelFrame(frame, text="Recording", padding=6)
         rec_frame.pack(fill=tk.X, pady=(0,8))
-        ttk.Label(rec_frame, text="FPS:").pack(side=tk.LEFT, padx=(0,4))
+
+        # Row 0: FPS and buttons
+        row0 = ttk.Frame(rec_frame)
+        row0.pack(fill=tk.X, pady=(0,4))
+        ttk.Label(row0, text="FPS:").pack(side=tk.LEFT, padx=(0,4))
         self.record_fps_var = tk.StringVar(value="30")
-        ttk.Spinbox(rec_frame, from_=5, to=60, textvariable=self.record_fps_var, width=6
+        ttk.Spinbox(row0, from_=5, to=60, textvariable=self.record_fps_var, width=6
                     ).pack(side=tk.LEFT, padx=(0,4))
-        self.rec_start_btn = ttk.Button(rec_frame, text="▶ Start", command=self._rec_start)
+        self.rec_start_btn = ttk.Button(row0, text="▶ Start", command=self._rec_start)
         self.rec_start_btn.pack(side=tk.LEFT, padx=(0,4))
-        self.rec_stop_btn = ttk.Button(rec_frame, text="■ Stop", command=self._rec_stop, state=tk.DISABLED)
+        self.rec_stop_btn = ttk.Button(row0, text="■ Stop", command=self._rec_stop, state=tk.DISABLED)
         self.rec_stop_btn.pack(side=tk.LEFT, padx=(0,4))
         self.rec_status_var = tk.StringVar(value="Idle")
-        ttk.Label(rec_frame, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(4,0))
+        ttk.Label(row0, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(4,0))
         self.rec_timer_var = tk.StringVar(value="")
-        ttk.Label(rec_frame, textvariable=self.rec_timer_var, width=10).pack(side=tk.LEFT)
-        ttk.Button(rec_frame, text="Apply FPS (reboot)", command=self._save_record_fps).pack(side=tk.RIGHT)
+        ttk.Label(row0, textvariable=self.rec_timer_var, width=10).pack(side=tk.LEFT)
+        ttk.Button(row0, text="Apply FPS (reboot)", command=self._save_record_fps).pack(side=tk.RIGHT)
+
+        # Row 1: Start trigger
+        row1 = ttk.Frame(rec_frame)
+        row1.pack(fill=tk.X, pady=(0,4))
+        ttk.Label(row1, text="Start:").pack(side=tk.LEFT, padx=(0,4))
+        self.rec_start_mode_var = tk.StringVar(value="Immediate")
+        start_modes = ["Immediate", "First Non-Zero", "Channel Change"]
+        self.rec_start_mode_combo = ttk.Combobox(row1, textvariable=self.rec_start_mode_var,
+                                                  values=start_modes, width=16, state="readonly")
+        self.rec_start_mode_combo.pack(side=tk.LEFT, padx=(0,4))
+        self.rec_start_mode_combo.bind("<<ComboboxSelected>>", lambda e: self._on_rec_trigger_change())
+        ttk.Label(row1, text="Univ:").pack(side=tk.LEFT, padx=(4,2))
+        self.rec_trig_univ_var = tk.StringVar(value="0")
+        ttk.Spinbox(row1, from_=0, to=255, textvariable=self.rec_trig_univ_var, width=5
+                    ).pack(side=tk.LEFT, padx=(0,4))
+        ttk.Label(row1, text="Ch:").pack(side=tk.LEFT, padx=(0,2))
+        self.rec_trig_ch_var = tk.StringVar(value="0")
+        ttk.Spinbox(row1, from_=0, to=511, textvariable=self.rec_trig_ch_var, width=5
+                    ).pack(side=tk.LEFT, padx=(0,4))
+        self._rec_show_trig_fields()
+
+        # Row 2: Stop trigger
+        row2 = ttk.Frame(rec_frame)
+        row2.pack(fill=tk.X, pady=(0,4))
+        ttk.Label(row2, text="Stop:").pack(side=tk.LEFT, padx=(0,4))
+        self.rec_stop_mode_var = tk.StringVar(value="Immediate")
+        stop_modes = ["Immediate", "All Zero", "Timer"]
+        self.rec_stop_mode_combo = ttk.Combobox(row2, textvariable=self.rec_stop_mode_var,
+                                                 values=stop_modes, width=16, state="readonly")
+        self.rec_stop_mode_combo.pack(side=tk.LEFT, padx=(0,4))
+        self.rec_stop_mode_combo.bind("<<ComboboxSelected>>", lambda e: self._on_rec_trigger_change())
+        ttk.Label(row2, text="Secs:").pack(side=tk.LEFT, padx=(4,2))
+        self.rec_stop_secs_var = tk.StringVar(value="5")
+        ttk.Spinbox(row2, from_=1, to=999, textvariable=self.rec_stop_secs_var, width=5
+                    ).pack(side=tk.LEFT, padx=(0,4))
+        self._rec_show_stop_fields()
 
         # Playback controls
         pb_frame = ttk.LabelFrame(frame, text="Playback", padding=6)
@@ -597,7 +637,35 @@ class DeviceConfigWindow:
         self.log("Record FPS updated on %s (rebooting)" % self.ip)
         self.win.destroy()
 
+    def _rec_show_trig_fields(self):
+        """Show/hide trigger fields based on start mode selection."""
+        pass  # Fields are always visible, user fills them when needed
+
+    def _rec_show_stop_fields(self):
+        """Show/hide stop timer field based on stop mode selection."""
+        pass
+
+    def _on_rec_trigger_change(self):
+        """Called when start or stop trigger mode changes."""
+        pass
+
     def _rec_start(self):
+        # Send trigger mode config before starting
+        mode_map = {"Immediate": "0", "First Non-Zero": "1", "Channel Change": "2"}
+        start_mode = mode_map.get(self.rec_start_mode_var.get(), "0")
+        self._cmd_send("REC:START_MODE=%s" % start_mode)
+        time.sleep(0.05)
+        stop_map = {"Immediate": "0", "All Zero": "1", "Timer": "2"}
+        stop_mode = stop_map.get(self.rec_stop_mode_var.get(), "0")
+        self._cmd_send("REC:STOP_MODE=%s" % stop_mode)
+        time.sleep(0.05)
+        self._cmd_send("REC:TRIGGER_UNIV=%s" % self.rec_trig_univ_var.get())
+        time.sleep(0.05)
+        self._cmd_send("REC:TRIGGER_CH=%s" % self.rec_trig_ch_var.get())
+        time.sleep(0.05)
+        self._cmd_send("REC:STOP_SECS=%s" % self.rec_stop_secs_var.get())
+        time.sleep(0.05)
+
         self._cmd_send("REC:START")
         self.rec_start_btn.config(state=tk.DISABLED)
         self.rec_stop_btn.config(state=tk.NORMAL)
