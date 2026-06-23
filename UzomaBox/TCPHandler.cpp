@@ -122,5 +122,11 @@ int parseCommand(const char *cmd)
   else if (!strcmp(cmd, "PING"))           return CMD_PING;
   else if (!strncmp(cmd, "COMMAND:TEST_PATTERN=", 20)) return CMD_TEST_PATTERN;
   else if (!strncmp(cmd, "COMMAND:TEST_OUTPUT=", 20))  return CMD_TEST_OUTPUT;
+  else if (!strncmp(cmd, "REC:START_MODE=", 15))      return CMD_REC_START_MODE;
+  else if (!strncmp(cmd, "REC:STOP_MODE=", 14))       return CMD_REC_STOP_MODE;
+  else if (!strncmp(cmd, "REC:TRIGGER_UNIV=", 17))    return CMD_REC_TRIGGER_UNIV;
+  else if (!strncmp(cmd, "REC:TRIGGER_CH=", 15))      return CMD_REC_TRIGGER_CH;
+  else if (!strncmp(cmd, "REC:STOP_SECS=", 14))       return CMD_REC_STOP_SECS;
+  else if (!strcmp(cmd, "REC:ARM"))                    return CMD_REC_ARM;
   else                                     return CMD_UNKNOWN;
 }

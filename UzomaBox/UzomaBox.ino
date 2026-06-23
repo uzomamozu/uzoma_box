@@ -37,6 +37,14 @@ OperatingMode      g_mode = MODE_ARTNET;
 
 // Recording state (active even in ArtNet mode when recording is triggered)
 bool               g_recordingActive = false;
+uint8_t            g_recStartMode    = 0;  // 0=immediate, 1=first non-zero, 2=channel change
+uint8_t            g_recStopMode     = 0;  // 0=immediate, 1=all zero, 2=timer
+uint16_t           g_recTrigUniv     = 0;
+uint16_t           g_recTrigCh       = 0;
+uint32_t           g_recStopSecs     = 0;  // seconds for timer stop
+bool               g_recArmed        = false;
+uint8_t            g_recLastTrigVal  = 0;
+uint32_t           g_recStopStart    = 0;
 
 // Frame timing for ArtNet mode
 uint32_t           g_lastArtNetFrame = 0;
@@ -258,10 +266,9 @@ void loop()
       break;
   }
 
-  // ---- Incoming ArtNet FPS meter ----------------------------------------
+  // ---- Incoming ArtNet FPS meter (kept for STATUS, no serial print) -----
   uint32_t now = millis();
   if (now - g_fpsLastPrint >= 1000) {
-    Serial.printf("ArtNet FPS: %lu\n", g_fpsFrames);
     g_fpsFrames = 0;
     g_fpsLastPrint = now;
   }
@@ -279,13 +286,78 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
   g_leds.fillFrameDirect(rgbData, totalPixels);
   g_leds.show();
 
-  // If recording, write frame to .BIN file with fixed frame time
+  // ---- Recording trigger logic ------------------------------------------
+  // Start triggers (when armed)
+  if (g_recArmed && !g_recordingActive) {
+    bool shouldStart = false;
+    if (g_recStartMode == 0) {
+      shouldStart = true;  // Immediate — shouldn't get here armed, but safe
+    } else if (g_recStartMode == 1) {
+      // First non-zero: check if any pixel has data > 0
+      for (uint16_t i = 0; i < totalPixels * 3; i++) {
+        if (rgbData[i] != 0) {
+          shouldStart = true;
+          Serial.println("TRIGGER: First non-zero pixel detected, starting recording");
+          break;
+        }
+      }
+    } else if (g_recStartMode == 2) {
+      // Channel change: check specific universe/channel
+      uint16_t pixelIdx = g_recTrigUniv * 512 + g_recTrigCh;
+      if (pixelIdx < totalPixels * 3) {
+        uint8_t val = rgbData[pixelIdx];
+        if (val != g_recLastTrigVal) {
+          g_recLastTrigVal = val;
+          shouldStart = true;
+          Serial.printf("TRIGGER: Channel %d changed to %d\n", g_recTrigCh, val);
+        }
+      }
+    }
+    if (shouldStart) {
+      g_recArmed = false;
+      g_recordingActive = true;
+      g_playback.resetFrameCount();
+      g_recStopStart = millis() / 1000;
+      Serial.println("Recording started by trigger");
+    }
+  }
+
+  // Write frame if recording is active
   if (g_recordingActive) {
-    // Use a fixed frame time based on the configured recording FPS.
-    // This ensures all frames are evenly spaced and playback at 1x
-    // reproduces the exact same frame rate as recording.
     uint32_t frameTimeUs = 1000000 / g_config.recordFps;
     g_playback.writeFrame(rgbData, totalPixels, frameTimeUs);
+
+    // Stop triggers
+    bool shouldStop = false;
+    if (g_recStopMode == 0) {
+      // Immediate — only stop via REC:STOP command
+    } else if (g_recStopMode == 1) {
+      // All zero: check if every pixel is 0
+      bool allZero = true;
+      for (uint16_t i = 0; i < totalPixels * 3; i++) {
+        if (rgbData[i] != 0) {
+          allZero = false;
+          break;
+        }
+      }
+      if (allZero) {
+        shouldStop = true;
+        Serial.println("STOP TRIGGER: All pixels zero, stopping recording");
+      }
+    } else if (g_recStopMode == 2) {
+      // Timer: check elapsed seconds
+      uint32_t elapsed = (millis() / 1000) - g_recStopStart;
+      if (elapsed >= g_recStopSecs) {
+        shouldStop = true;
+        Serial.printf("STOP TRIGGER: Timer expired (%lu secs)\n", g_recStopSecs);
+      }
+    }
+    if (shouldStop) {
+      g_playback.stopRecording();
+      g_recordingActive = false;
+      g_recArmed = false;
+      Serial.println("Recording stopped by trigger");
+    }
   }
 
   g_frameCounter++;
@@ -320,15 +392,69 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       break;
 
     case CMD_REC_START:
-      if (g_playback.startRecording()) {
-        g_recordingActive = true;
-        g_lastArtNetFrame = micros();
-        g_playback.resetFrameCount();
-        g_tcp.sendResponse("OK:recording started");
-        Serial.printf("Recording started: %s\n", g_playback.currentFilename());
+      if (g_recStartMode == 0 || g_recArmed) {
+        if (g_playback.startRecording()) {
+          g_recordingActive = true;
+          g_lastArtNetFrame = micros();
+          g_playback.resetFrameCount();
+          g_tcp.sendResponse("OK:recording started");
+          g_recStopStart = millis() / 1000;
+          Serial.printf("Recording started: %s\n", g_playback.currentFilename());
+        } else {
+          g_tcp.sendResponse("ERR:could not start recording");
+        }
       } else {
-        g_tcp.sendResponse("ERR:could not start recording");
+        // Non-immediate start: arm and wait for ArtNet trigger
+        g_recArmed = true;
+        g_tcp.sendResponse("OK:armed, waiting for trigger");
+        Serial.println("Recording armed, waiting for trigger");
       }
+      break;
+
+    case CMD_REC_ARM:
+      g_recArmed = true;
+      g_recLastTrigVal = 0;
+      g_tcp.sendResponse("OK:armed for trigger");
+      Serial.println("Recording armed by REC:ARM");
+      break;
+
+    case CMD_REC_START_MODE:
+      {
+        int m = atoi(cmdStr + 15); // skip "REC:START_MODE="
+        if (m >= 0 && m <= 2) {
+          g_recStartMode = (uint8_t)m;
+          g_tcp.sendResponse("OK:start mode set");
+        } else {
+          g_tcp.sendResponse("ERR:invalid start mode (0-2)");
+        }
+      }
+      break;
+
+    case CMD_REC_STOP_MODE:
+      {
+        int m = atoi(cmdStr + 14); // skip "REC:STOP_MODE="
+        if (m >= 0 && m <= 2) {
+          g_recStopMode = (uint8_t)m;
+          g_tcp.sendResponse("OK:stop mode set");
+        } else {
+          g_tcp.sendResponse("ERR:invalid stop mode (0-2)");
+        }
+      }
+      break;
+
+    case CMD_REC_TRIGGER_UNIV:
+      g_recTrigUniv = (uint16_t)atoi(cmdStr + 17);
+      g_tcp.sendResponse("OK:trigger universe set");
+      break;
+
+    case CMD_REC_TRIGGER_CH:
+      g_recTrigCh = (uint16_t)atoi(cmdStr + 15);
+      g_tcp.sendResponse("OK:trigger channel set");
+      break;
+
+    case CMD_REC_STOP_SECS:
+      g_recStopSecs = (uint32_t)atoi(cmdStr + 14);
+      g_tcp.sendResponse("OK:stop seconds set");
       break;
 
     case CMD_REC_STOP:
@@ -502,7 +628,8 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_TEST_PATTERN:
       {
-        int pat = atoi(cmdStr + 20); // skip "COMMAND:TEST_PATTERN="
+        int pat = atoi(cmdStr + 21); // skip "COMMAND:TEST_PATTERN="
+        Serial.printf("DEBUG: CMD_TEST_PATTERN parsed pat=%d from: %s\n", pat, cmdStr);
         if (pat >= 0 && pat <= 4) {
           g_testPattern = (uint8_t)pat;
           g_testStartMs = millis();
@@ -515,7 +642,8 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_TEST_OUTPUT:
       {
-        int out = atoi(cmdStr + 19); // skip "COMMAND:TEST_OUTPUT="
+        int out = atoi(cmdStr + 20); // skip "COMMAND:TEST_OUTPUT="
+        Serial.printf("DEBUG: CMD_TEST_OUTPUT parsed out=%d from: %s\n", out, cmdStr);
         if (out == 255 || (out >= 0 && out <= 7)) {
           g_testOutput = (uint8_t)out;
           g_tcp.sendResponse("OK:test output set");
@@ -657,59 +785,22 @@ void runTestAnimation()
     else if (slot == 2) { r = 0;   g = 0;   b = 255; }
     else                { r = 255; g = 255; b = 255; }
   } else if (g_testPattern == 1) {
-    // Pattern 1: Rainbow Fade (sine-based, 6s cycle)
-    static const uint8_t sin256[1024] = {
-      0,1,2,3,5,6,7,8,10,11,12,13,15,16,17,18,20,21,22,23,25,26,27,28,30,31,
-      32,33,34,36,37,38,39,41,42,43,44,46,47,48,49,50,52,53,54,55,56,58,59,60,
-      61,62,64,65,66,67,68,69,71,72,73,74,75,76,78,79,80,81,82,83,84,86,87,88,
-      89,90,91,92,93,94,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,
-      111,112,113,114,115,116,117,118,119,120,121,122,122,123,124,125,126,127,
-      128,129,129,130,131,132,133,133,134,135,136,137,137,138,139,140,140,141,
-      142,143,143,144,145,145,146,147,147,148,149,149,150,151,151,152,152,153,
-      154,154,155,155,156,156,157,158,158,159,159,160,160,160,161,161,162,162,
-      163,163,163,164,164,165,165,165,166,166,166,167,167,168,168,168,168,169,
-      169,169,170,170,170,170,171,171,171,171,171,172,172,172,172,173,173,173,
-      173,173,173,174,174,174,174,174,174,174,174,175,175,175,175,175,175,175,
-      175,175,175,175,175,175,175,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
-      176,176,176,176,176,176,176,176,176,175,175,175,175,175,175,175,175,175,
-      175,175,175,175,175,174,174,174,174,174,174,174,174,173,173,173,173,173,
-      173,172,172,172,172,171,171,171,171,171,170,170,170,170,169,169,169,168,
-      168,168,168,167,167,166,166,166,165,165,165,164,164,163,163,163,162,162,
-      161,161,160,160,160,159,159,158,158,157,156,156,155,155,154,154,153,152,
-      152,151,151,150,149,149,148,147,147,146,145,145,144,143,143,142,141,140,
-      140,139,138,137,137,136,135,134,133,133,132,131,130,129,129,128,127,126,
-      125,124,123,122,122,121,120,119,118,117,116,115,114,113,112,111,110,109,
-      108,107,106,105,104,103,102,101,100,99,98,97,96,94,93,92,91,90,89,88,87,
-      86,84,83,82,81,80,79,78,76,75,74,73,72,71,69,68,67,66,65,64,62,61,60,59,
-      58,56,55,54,53,52,50,49,48,47,46,44,43,42,41,39,38,37,36,34,33,32,31,30,
-      28,27,26,25,23,22,21,20,18,17,16,15,13,12,11,10,8,7,6,5,3,2,1,0
-    };
+    // Pattern 1: Color Fade (hue wheel, no white gaps, smooth)
+    // Hue sweeps 0..256 every 3 seconds, then wraps cleanly
     uint32_t elapsed = millis() - g_testStartMs;
-    uint32_t phase = (elapsed * 682UL) / 1000UL;
-    phase &= 0xFFF;
-    uint32_t p = phase;
-    if (p < 1024)       r = sin256[p];
-    else if (p < 2048)  r = sin256[2047 - p];
-    else if (p < 3072)  r = 255 - sin256[p - 2048];
-    else                r = 255 - sin256[4095 - p];
-    p = (phase + 1365) & 0xFFF;
-    if (p < 1024)       g = sin256[p];
-    else if (p < 2048)  g = sin256[2047 - p];
-    else if (p < 3072)  g = 255 - sin256[p - 2048];
-    else                g = 255 - sin256[4095 - p];
-    p = (phase + 2730) & 0xFFF;
-    if (p < 1024)       b = sin256[p];
-    else if (p < 2048)  b = sin256[2047 - p];
-    else if (p < 3072)  b = 255 - sin256[p - 2048];
-    else                b = 255 - sin256[4095 - p];
+    uint16_t hue = (elapsed * 85UL) / 1000UL;  // ~85 steps/sec, wraps at 256
+    hue &= 0xFF;  // keep in 0..255
+    // Convert hue (0..255) to RGB using HSV algorithm (saturation=255, value=255)
+    uint8_t region = hue / 43;
+    uint8_t remainder = (hue - region * 43) * 6;
+    switch (region) {
+      case 0: r = 255; g = remainder;       b = 0;          break;
+      case 1: r = 255 - remainder; g = 255; b = 0;          break;
+      case 2: r = 0;          g = 255; b = remainder;       break;
+      case 3: r = 0;          g = 255 - remainder; b = 255; break;
+      case 4: r = remainder;  g = 0;          b = 255;      break;
+      default: r = 255;       g = 0;          b = 255 - remainder; break;
+    }
   } else if (g_testPattern == 2) {
     r = 255; g = 0; b = 0;
   } else if (g_testPattern == 3) {
@@ -726,6 +817,13 @@ void runTestAnimation()
       }
     }
   } else {
+    // First black out all strips
+    for (uint8_t s = 0; s < 8; s++) {
+      for (uint16_t i = 0; i < stripLen; i++) {
+        g_leds.setPixel(s, i, 0, 0, 0);
+      }
+    }
+    // Then set only the selected output
     uint8_t s = g_testOutput;
     for (uint16_t i = 0; i < stripLen; i++) {
       g_leds.setPixel(s, i, r, g, b);
