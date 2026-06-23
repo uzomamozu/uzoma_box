@@ -715,8 +715,9 @@ class DeviceConfigWindow:
                 pass
         elif k == "playback_speed":
             try:
-                # Only update label from STATUS, not the slider thumb
-                self.speed_label_var.set("%.2fx" % float(v))
+                # Do nothing — slider thumb and label are user-only
+                # The always-visible bar is handled below
+                pass
             except:
                 pass
         elif k == "file_pos" or k == "file_total":
