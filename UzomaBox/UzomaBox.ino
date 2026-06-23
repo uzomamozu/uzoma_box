@@ -502,7 +502,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_TEST_PATTERN:
       {
-        int pat = atoi(cmdStr + 19); // skip "COMMAND:TEST_PATTERN="
+        int pat = atoi(cmdStr + 20); // skip "COMMAND:TEST_PATTERN="
         if (pat >= 0 && pat <= 4) {
           g_testPattern = (uint8_t)pat;
           g_testStartMs = millis();

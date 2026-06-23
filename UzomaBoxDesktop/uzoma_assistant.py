@@ -195,6 +195,7 @@ class DeviceConfigWindow:
         self._file_list = []
         self._progress_active = False
         self._start_univ_dirty = [False] * 8
+        self._speed_dirty = False
 
         self._tcp = TcpClientPersistent(self.ip, timeout=3.0)
         try:
@@ -425,7 +426,7 @@ class DeviceConfigWindow:
         speed_frame.pack(fill=tk.X, pady=(4,0))
         ttk.Label(speed_frame, text="Speed:").pack(side=tk.LEFT, padx=(0,4))
         self.speed_var = tk.DoubleVar(value=1.0)
-        speed_scale = ttk.Scale(speed_frame, from_=0.05, to=5.0, orient=tk.HORIZONTAL,
+        speed_scale = ttk.Scale(speed_frame, from_=0.2, to=2.0, orient=tk.HORIZONTAL,
                                  variable=self.speed_var, command=self._on_speed_change, length=150)
         speed_scale.pack(side=tk.LEFT, padx=(0,4))
         self.speed_label_var = tk.StringVar(value="1.00x")
@@ -453,6 +454,7 @@ class DeviceConfigWindow:
         pat_frame = ttk.LabelFrame(frame, text="Pattern", padding=6)
         pat_frame.pack(fill=tk.X, pady=(0,8))
         self.test_pattern_var = tk.StringVar(value="RGBW Cycle")
+        self.test_pattern_var.trace_add("write", lambda *a: self._send_test_pattern())
         patterns = ["RGBW Cycle", "Rainbow Fade", "Plain Red", "Plain Green", "Plain Blue"]
         for pat in patterns:
             ttk.Radiobutton(pat_frame, text=pat, variable=self.test_pattern_var,
@@ -486,19 +488,28 @@ class DeviceConfigWindow:
             self.test_output_combo.config(state=tk.DISABLED)
         else:
             self.test_output_combo.config(state="readonly")
+        self._send_test_output()
 
-    def _start_test(self):
-        self._cmd_send("MODE:test")
-        # Also send pattern and output as config-like commands
-        pattern_map = {"RGBW Cycle": "0", "Rainbow Fade": "1", "Plain Red": "2",
-                       "Plain Green": "3", "Plain Blue": "4"}
-        pat = pattern_map.get(self.test_pattern_var.get(), "0")
-        self._cmd_send("COMMAND:TEST_PATTERN=%s" % pat)
-        time.sleep(0.05)
+    def _send_test_output(self):
+        """Send the current output selection to the Teensy immediately."""
         if self.test_output_all.get():
             self._cmd_send("COMMAND:TEST_OUTPUT=255")
         else:
             self._cmd_send("COMMAND:TEST_OUTPUT=%s" % str(int(self.test_output_combo.get()) - 1))
+
+    def _send_test_pattern(self):
+        """Send the current pattern to the Teensy immediately."""
+        pattern_map = {"RGBW Cycle": "0", "Rainbow Fade": "1", "Plain Red": "2",
+                       "Plain Green": "3", "Plain Blue": "4"}
+        pat = pattern_map.get(self.test_pattern_var.get(), "0")
+        self._cmd_send("COMMAND:TEST_PATTERN=%s" % pat)
+
+    def _start_test(self):
+        self._cmd_send("MODE:test")
+        time.sleep(0.05)
+        self._send_test_pattern()
+        time.sleep(0.05)
+        self._send_test_output()
         self.status_var.set("Test mode started")
         self.log("Test mode on %s: pattern=%s" % (self.ip, self.test_pattern_var.get()))
 
@@ -613,12 +624,14 @@ class DeviceConfigWindow:
         self.log("Stop on %s" % self.ip)
 
     def _on_speed_change(self, *args):
+        self._speed_dirty = True
         self.speed_label_var.set("%.2fx" % self.speed_var.get())
 
     def _set_speed(self):
         speed = self.speed_var.get()
-        speed = max(0.05, min(5.0, speed))
+        speed = max(0.2, min(2.0, speed))
         self._cmd_send("SPEED:%.2f" % speed)
+        self._speed_dirty = False
         self.log("Speed %.2fx on %s" % (speed, self.ip))
 
     def _refresh_list(self):
@@ -704,7 +717,8 @@ class DeviceConfigWindow:
                 pass
         elif k == "playback_speed":
             try:
-                self.speed_var.set(float(v))
+                if not self._speed_dirty:
+                    self.speed_var.set(float(v))
                 self.speed_label_var.set("%.2fx" % float(v))
             except:
                 pass
