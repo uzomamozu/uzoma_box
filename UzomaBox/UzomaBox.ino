@@ -42,10 +42,23 @@ bool               g_recordingActive = false;
 uint32_t           g_lastArtNetFrame = 0;
 uint32_t           g_frameCounter    = 0;
 
+// Test mode animation start timestamp
+uint32_t           g_testStartMs     = 0;
+
+// Non-blocking IDENTIFY blink state
+bool               g_identifyActive     = false;
+uint8_t            g_identifyBlinkCount = 0;
+uint32_t           g_identifyLastToggle = 0;
+bool               g_identifyLedState   = false;
+
+// Throttle for UDP discovery broadcasts (only send every 5s)
+uint32_t           g_lastDiscoveryPoll  = 0;
+
 // ========================  FORWARD DECLARATIONS  ==========================
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels);
 void handleTcpCommand(int cmd, const char *cmdStr);
+void runTestAnimation();
 void rebootTeensy();
 void printStatus();
 void setMode(OperatingMode newMode);
@@ -136,9 +149,28 @@ void loop()
     handleTcpCommand(cmd, cmdBuffer);
   }
 
-  // ---- Poll UDP discovery -----------------------------------------------
-  g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
-                   Ethernet.localIP(), 0);
+  // ---- Non-blocking IDENTIFY blink --------------------------------------
+  if (g_identifyActive) {
+    uint32_t now = millis();
+    if (now - g_identifyLastToggle >= 200) {
+      g_identifyLastToggle = now;
+      g_identifyLedState = !g_identifyLedState;
+      digitalWrite(LED_BUILTIN, g_identifyLedState);
+      g_identifyBlinkCount++;
+      if (g_identifyBlinkCount >= 20) {  // 10 full blinks (20 toggles)
+        g_identifyActive = false;
+        digitalWrite(LED_BUILTIN, LOW);
+        pinMode(LED_BUILTIN, INPUT);
+      }
+    }
+  }
+
+  // ---- Poll UDP discovery (throttled to every 5s) -----------------------
+  if (millis() - g_lastDiscoveryPoll > 5000) {
+    g_lastDiscoveryPoll = millis();
+    g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
+                     Ethernet.localIP(), 0);
+  }
 
   // ---- Mode-specific behaviour ------------------------------------------
 
@@ -214,6 +246,10 @@ void loop()
       // (the user triggers REC:START / REC:STOP via TCP)
       g_artNet.poll();
       break;
+
+    case MODE_TEST:
+      runTestAnimation();
+      break;
   }
 
   // ---- Small yield for watchdog / USB tasks -----------------------------
@@ -225,8 +261,8 @@ void loop()
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  // Push to LEDs – fillFrame() already honors the color order from g_leds
-  g_leds.fillFrame(rgbData, totalPixels);
+  // Push to LEDs – fillFrameDirect uses memcpy per strip for ORDER_RGB
+  g_leds.fillFrameDirect(rgbData, totalPixels);
   g_leds.show();
 
   // If recording, write frame to .BIN file with fixed frame time
@@ -260,6 +296,12 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     case CMD_MODE_RECORD:
       g_tcp.sendResponse("OK:switching to Record mode");
       setMode(MODE_RECORD);
+      break;
+
+    case CMD_MODE_TEST:
+      g_tcp.sendResponse("OK:switching to Test mode");
+      g_testStartMs = millis();
+      setMode(MODE_TEST);
       break;
 
     case CMD_REC_START:
@@ -444,15 +486,14 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_IDENTIFY:
-      Serial.println("IDENTIFY: flashing LED");
+      Serial.println("IDENTIFY: flashing LED (non-blocking)");
       g_tcp.sendResponse("OK:identify");
-      {
-        pinMode(LED_BUILTIN, OUTPUT);
-        for (int i = 0; i < 10; i++) {
-          digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-          delay(200);
-        }
-      }
+      pinMode(LED_BUILTIN, OUTPUT);
+      g_identifyActive     = true;
+      g_identifyBlinkCount = 0;
+      g_identifyLastToggle = millis();
+      g_identifyLedState   = false;
+      digitalWrite(LED_BUILTIN, LOW);
       break;
 
     case CMD_PING:
@@ -501,6 +542,7 @@ void setMode(OperatingMode newMode)
     case MODE_ARTNET:   Serial.println("ArtNet");  break;
     case MODE_PLAYBACK: Serial.println("Playback"); break;
     case MODE_RECORD:   Serial.println("Record");   break;
+    case MODE_TEST:     Serial.println("Test");     break;
   }
 }
 
@@ -536,7 +578,8 @@ void printStatus()
     "file_pos=%lu\r\n"
     "file_total=%lu",
     (g_mode == MODE_ARTNET)   ? "artnet" :
-    (g_mode == MODE_PLAYBACK) ? "playback" : "record",
+    (g_mode == MODE_PLAYBACK) ? "playback" :
+    (g_mode == MODE_RECORD)   ? "record" : "test",
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
     g_config.ledWidth,
     g_frameCounter,
@@ -554,6 +597,97 @@ void printStatus()
     (g_playback.isPlaying() ? g_playback.fileSize() : 0)
   );
   g_tcp.sendResponse(buf);
+}
+
+// ========================  TEST MODE ANIMATION  ==========================
+
+void runTestAnimation()
+{
+  // RGB color cycle using sinusoidal crossfade between pure colors
+  // Cycle period: 6 seconds (one full rotation through R-Y-G-C-B-M)
+  // sin/cos blending gives smooth fade with no dead zones.
+  //
+  // Using pre-scaled 256-value sine via a 1024-entry quarter-wave table
+  // (sin256[i] = round(sin(i * PI/2048) * 255)) for speed on Teensy.
+
+  static const uint8_t sin256[1024] = {
+    0,1,2,3,5,6,7,8,10,11,12,13,15,16,17,18,20,21,22,23,25,26,27,28,30,31,
+    32,33,34,36,37,38,39,41,42,43,44,46,47,48,49,50,52,53,54,55,56,58,59,60,
+    61,62,64,65,66,67,68,69,71,72,73,74,75,76,78,79,80,81,82,83,84,86,87,88,
+    89,90,91,92,93,94,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,
+    111,112,113,114,115,116,117,118,119,120,121,122,122,123,124,125,126,127,
+    128,129,129,130,131,132,133,133,134,135,136,137,137,138,139,140,140,141,
+    142,143,143,144,145,145,146,147,147,148,149,149,150,151,151,152,152,153,
+    154,154,155,155,156,156,157,158,158,159,159,160,160,160,161,161,162,162,
+    163,163,163,164,164,165,165,165,166,166,166,167,167,168,168,168,168,169,
+    169,169,170,170,170,170,171,171,171,171,171,172,172,172,172,173,173,173,
+    173,173,173,174,174,174,174,174,174,174,174,175,175,175,175,175,175,175,
+    175,175,175,175,175,175,175,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,
+    176,176,176,176,176,176,176,176,176,175,175,175,175,175,175,175,175,175,
+    175,175,175,175,175,174,174,174,174,174,174,174,174,173,173,173,173,173,
+    173,172,172,172,172,171,171,171,171,171,170,170,170,170,169,169,169,168,
+    168,168,168,167,167,166,166,166,165,165,165,164,164,163,163,163,162,162,
+    161,161,160,160,160,159,159,158,158,157,156,156,155,155,154,154,153,152,
+    152,151,151,150,149,149,148,147,147,146,145,145,144,143,143,142,141,140,
+    140,139,138,137,137,136,135,134,133,133,132,131,130,129,129,128,127,126,
+    125,124,123,122,122,121,120,119,118,117,116,115,114,113,112,111,110,109,
+    108,107,106,105,104,103,102,101,100,99,98,97,96,94,93,92,91,90,89,88,87,
+    86,84,83,82,81,80,79,78,76,75,74,73,72,71,69,68,67,66,65,64,62,61,60,59,
+    58,56,55,54,53,52,50,49,48,47,46,44,43,42,41,39,38,37,36,34,33,32,31,30,
+    28,27,26,25,23,22,21,20,18,17,16,15,13,12,11,10,8,7,6,5,3,2,1,0
+  };
+
+  uint32_t now = millis();
+  uint32_t elapsed = now - g_testStartMs;
+  // Phase: 0..4095 wraps every 6 seconds at ~682 steps/sec
+  uint32_t phase = (elapsed * 682UL) / 1000UL;
+  phase &= 0xFFF;  // modulo 4096 (full 0-2PI circle)
+
+  // Derive R, G, B from sinusoidal phases offset by 120 degrees (4096/3 = ~1365)
+  // sin256 values: phase 0-1023 = sin[phase], 1024-2047 = descending, 2048-3071 = neg->sin, 3072-4095 = ascending
+  uint8_t r, g, b;
+
+  // Red: phase + 0
+  uint32_t p = phase;
+  if (p < 1024)       r = sin256[p];
+  else if (p < 2048)  r = sin256[2047 - p];
+  else if (p < 3072)  r = 255 - sin256[p - 2048];
+  else                r = 255 - sin256[4095 - p];
+
+  // Green: phase + 1365 (120 degrees)
+  p = (phase + 1365) & 0xFFF;
+  if (p < 1024)       g = sin256[p];
+  else if (p < 2048)  g = sin256[2047 - p];
+  else if (p < 3072)  g = 255 - sin256[p - 2048];
+  else                g = 255 - sin256[4095 - p];
+
+  // Blue: phase + 2730 (240 degrees)
+  p = (phase + 2730) & 0xFFF;
+  if (p < 1024)       b = sin256[p];
+  else if (p < 2048)  b = sin256[2047 - p];
+  else if (p < 3072)  b = 255 - sin256[p - 2048];
+  else                b = 255 - sin256[4095 - p];
+
+  // Fill all active strips with this solid color
+  uint16_t nStrips = 8;
+  uint16_t stripLen = g_leds.getLedsPerStrip();
+  for (uint8_t s = 0; s < nStrips; s++) {
+    for (uint16_t i = 0; i < stripLen; i++) {
+      g_leds.setPixel(s, i, r, g, b);
+    }
+  }
+  g_leds.show();
+
+  // ~60 FPS frame rate
+  delay(16);
 }
 
 // ========================  REBOOT  ========================================

@@ -74,9 +74,16 @@ int TCPHandler::poll(char *cmdBuffer, unsigned int bufSize)
 // ---------------------------------------------------------------------------
 void TCPHandler::sendResponse(const char *msg)
 {
-  if (_connected && _client.connected()) {
+  if (!_connected || !_client.connected()) return;
+
+  // Non-blocking send: only write if there is room in the TCP buffer.
+  // availableForWrite() returns how many bytes can be written without blocking.
+  // We need len + 2 for the \r\n that println adds.
+  int len = strlen(msg);
+  if (_client.availableForWrite() >= (unsigned int)(len + 2)) {
     _client.println(msg);
   }
+  // If buffer is full, silently drop the response to avoid blocking
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +107,7 @@ int parseCommand(const char *cmd)
   if      (!strcmp(cmd, "MODE:artnet"))    return CMD_MODE_ARTNET;
   else if (!strcmp(cmd, "MODE:playback"))  return CMD_MODE_PLAYBACK;
   else if (!strcmp(cmd, "MODE:record"))    return CMD_MODE_RECORD;
+  else if (!strcmp(cmd, "MODE:test"))      return CMD_MODE_TEST;
   else if (!strcmp(cmd, "REC:START"))      return CMD_REC_START;
   else if (!strcmp(cmd, "REC:STOP"))       return CMD_REC_STOP;
   else if (!strncmp(cmd, "CONFIG:", 7))    return CMD_CONFIG;

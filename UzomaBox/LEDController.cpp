@@ -10,8 +10,8 @@
 
 // DMAMEM must be statically allocated on Teensy.
 // We allocate for the maximum possible size; the actual used amount is set in begin().
-DMAMEM static int s_displayMemory[MAX_LEDS_PER_STRIP * 6];
-static int s_drawingMemory[MAX_LEDS_PER_STRIP * 6];
+DMAMEM static int s_displayMemory[MAX_LEDS_PER_STRIP * 8];
+static int s_drawingMemory[MAX_LEDS_PER_STRIP * 8];
 
 // ---------------------------------------------------------------------------
 // Color-order permutation lookup table
@@ -142,24 +142,107 @@ void LEDController::fillFrame(const uint8_t *rgbData, uint16_t totalPixels)
 }
 
 // ---------------------------------------------------------------------------
+void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels)
+{
+  // OctoWS2811 drawing memory is a uint8_t buffer, 3 bytes per pixel,
+  // arranged strip-major. For ORDER_RGB the byte layout matches the
+  // source exactly, so we can memcpy whole strips.
+  uint16_t stripPixels = totalPixels / 8;
+  if (stripPixels > _ledsPerStrip) stripPixels = _ledsPerStrip;
+  uint16_t stripBytes = stripPixels * 3;
+  uint8_t *draw = (uint8_t *)s_drawingMemory;
+
+  // Fast path for ORDER_RGB: single memcpy per active strip
+  if (_colorOrder == ORDER_RGB) {
+    for (uint8_t s = 0; s < 8; s++) {
+      uint8_t *dst = draw + s * _ledsPerStrip * 3;
+      if (_outputActive[s]) {
+        memcpy(dst, rgbData + s * stripBytes, stripBytes);
+      } else {
+        memset(dst, 0, _ledsPerStrip * 3);
+      }
+    }
+    return;
+  }
+
+  // Fast path for ORDER_BGR: swap R↔B per pixel, 3 bytes per pixel
+  if (_colorOrder == ORDER_BGR) {
+    for (uint8_t s = 0; s < 8; s++) {
+      uint8_t *dst = draw + s * _ledsPerStrip * 3;
+      if (!_outputActive[s]) {
+        memset(dst, 0, _ledsPerStrip * 3);
+        continue;
+      }
+      const uint8_t *src = rgbData + s * stripBytes;
+      for (uint16_t i = 0; i < stripPixels; i++) {
+        dst[i*3 + 0] = src[i*3 + 2];  // B
+        dst[i*3 + 1] = src[i*3 + 1];  // G
+        dst[i*3 + 2] = src[i*3 + 0];  // R
+      }
+      // Zero-fill remaining LEDs in this strip (if stripPixels < _ledsPerStrip)
+      memset(dst + stripBytes, 0, (_ledsPerStrip - stripPixels) * 3);
+    }
+    return;
+  }
+
+  // Fallback for all other color orders: use permutation lookup
+  const uint8_t *perm = colorOrderPerm[_colorOrder];
+  for (uint8_t s = 0; s < 8; s++) {
+    uint8_t *dst = draw + s * _ledsPerStrip * 3;
+    if (!_outputActive[s]) {
+      memset(dst, 0, _ledsPerStrip * 3);
+      continue;
+    }
+    const uint8_t *src = rgbData + s * stripBytes;
+    for (uint16_t i = 0; i < stripPixels; i++) {
+      dst[i*3 + 0] = src[i*3 + perm[0]];
+      dst[i*3 + 1] = src[i*3 + perm[1]];
+      dst[i*3 + 2] = src[i*3 + perm[2]];
+    }
+    memset(dst + stripBytes, 0, (_ledsPerStrip - stripPixels) * 3);
+  }
+}
+
+// ---------------------------------------------------------------------------
 void LEDController::fillFromBin(const uint8_t *data, uint16_t len)
 {
-  // The .BIN frame data is a raw RGB byte stream for ALL 8 strips.
-  // We copy it directly into the OctoWS2811 drawing memory area.
-  // The drawing memory layout is: each LED uses 3 ints (RGB).
-  // data is byte-triplets RGBRGB...
-  // We loop over the pixel count based on len.
+  // memcpy-based optimisation: copy raw bytes directly into drawing memory
   uint16_t maxBytes = _ledsPerStrip * 8 * 3;
   if (len > maxBytes) len = maxBytes;
+  uint16_t pixelCount = len / 3;
+  if (pixelCount > _ledsPerStrip * 8) pixelCount = _ledsPerStrip * 8;
+  uint8_t *draw = (uint8_t *)s_drawingMemory;
+
+  if (_colorOrder == ORDER_RGB) {
+    // Source and destination layouts are identical → single memcpy
+    memcpy(draw, data, pixelCount * 3);
+    // Zero-fill remaining
+    if (pixelCount * 3 < maxBytes) {
+      memset(draw + pixelCount * 3, 0, maxBytes - pixelCount * 3);
+    }
+    return;
+  }
+
+  if (_colorOrder == ORDER_BGR) {
+    for (uint16_t i = 0; i < pixelCount; i++) {
+      draw[i*3 + 0] = data[i*3 + 2];  // B
+      draw[i*3 + 1] = data[i*3 + 1];  // G
+      draw[i*3 + 2] = data[i*3 + 0];  // R
+    }
+    if (pixelCount * 3 < maxBytes) {
+      memset(draw + pixelCount * 3, 0, maxBytes - pixelCount * 3);
+    }
+    return;
+  }
 
   const uint8_t *perm = colorOrderPerm[_colorOrder];
-  uint16_t pixelCount = len / 3;
-  for (uint16_t i = 0; i < pixelCount && i < _ledsPerStrip * 8; i++) {
-    uint8_t rgb[3];
-    rgb[0] = data[i * 3 + 0];
-    rgb[1] = data[i * 3 + 1];
-    rgb[2] = data[i * 3 + 2];
-    _leds.setPixel(i, rgb[perm[0]], rgb[perm[1]], rgb[perm[2]]);
+  for (uint16_t i = 0; i < pixelCount; i++) {
+    draw[i*3 + 0] = data[i*3 + perm[0]];
+    draw[i*3 + 1] = data[i*3 + perm[1]];
+    draw[i*3 + 2] = data[i*3 + perm[2]];
+  }
+  if (pixelCount * 3 < maxBytes) {
+    memset(draw + pixelCount * 3, 0, maxBytes - pixelCount * 3);
   }
 }
 
