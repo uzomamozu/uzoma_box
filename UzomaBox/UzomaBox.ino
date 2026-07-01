@@ -116,7 +116,6 @@ void setup()
 
   // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
   Ethernet.begin(g_config.mac, g_config.ip);
-  delay(1000);
   Serial.print("Ethernet IP: ");
   Serial.println(Ethernet.localIP());
 

@@ -191,7 +191,5 @@ bool sdFileDelete(const char *filename)
 // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) -----------------
 bool sdInit(void)
 {
-  // The SD library needs at least 200 ms after power-up
-  delay(300);
   return SD.begin(BUILTIN_SDCARD);
 }

@@ -10,6 +10,10 @@
 // Maximum command line length
 #define CMD_BUFFER_SIZE  256
 
+// Response queue: up to 8 pending responses, 128 bytes each
+#define RESP_QUEUE_COUNT  8
+#define RESP_QUEUE_LEN    128
+
 class TCPHandler {
 public:
   TCPHandler();
@@ -23,7 +27,7 @@ public:
   // cmdBuffer is filled with the full command string.
   int poll(char *cmdBuffer, unsigned int bufSize);
 
-  // Send a response to the client
+  // Send a response to the client (non-blocking — queues if buffer full)
   void sendResponse(const char *msg);
 
   // Check if a client is connected
@@ -38,6 +42,15 @@ private:
   bool           _connected;
   char           _lineBuffer[CMD_BUFFER_SIZE];
   unsigned int   _linePos;
+
+  // Response ring buffer — prevents silently dropped messages
+  char           _respQueue[RESP_QUEUE_COUNT][RESP_QUEUE_LEN];
+  uint8_t        _queueHead;   // write index
+  uint8_t        _queueTail;   // read index
+  uint8_t        _queueCount;  // items pending
+
+  // Flush queued responses to the TCP socket (call from poll())
+  void _flushQueue();
 };
 
 // Command tokens returned by poll()

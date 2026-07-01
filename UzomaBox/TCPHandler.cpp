@@ -6,6 +6,9 @@ TCPHandler::TCPHandler()
   : _server(TCP_PORT)
   , _connected(false)
   , _linePos(0)
+  , _queueHead(0)
+  , _queueTail(0)
+  , _queueCount(0)
 {
   _lineBuffer[0] = 0;
 }
@@ -30,6 +33,7 @@ int TCPHandler::poll(char *cmdBuffer, unsigned int bufSize)
       _connected = true;
       _linePos = 0;
       _lineBuffer[0] = 0;
+      _queueHead = _queueTail = _queueCount = 0;
       sendResponse("OK:connected");
     }
     cmdBuffer[0] = 0;
@@ -41,9 +45,13 @@ int TCPHandler::poll(char *cmdBuffer, unsigned int bufSize)
     _client.stop();
     _connected = false;
     _linePos = 0;
+    _queueHead = _queueTail = _queueCount = 0;
     cmdBuffer[0] = 0;
     return CMD_NONE;
   }
+
+  // Attempt to flush any queued responses before reading new commands
+  _flushQueue();
 
   // Read available data
   while (_client.available()) {
@@ -76,14 +84,32 @@ void TCPHandler::sendResponse(const char *msg)
 {
   if (!_connected || !_client.connected()) return;
 
-  // Non-blocking send: only write if there is room in the TCP buffer.
-  // availableForWrite() returns how many bytes can be written without blocking.
-  // We need len + 2 for the \r\n that println adds.
   int len = strlen(msg);
-  if (_client.availableForWrite() >= (unsigned int)(len + 2)) {
+
+  // Fast path: send immediately if no backlog and buffer has room
+  if (_queueCount == 0 && _client.availableForWrite() >= (unsigned int)(len + 2)) {
     _client.println(msg);
+    return;
   }
-  // If buffer is full, silently drop the response to avoid blocking
+
+  // Slow path: queue for later if room in the ring buffer
+  if (_queueCount < RESP_QUEUE_COUNT) {
+    strncpy(_respQueue[_queueHead], msg, RESP_QUEUE_LEN - 1);
+    _respQueue[_queueHead][RESP_QUEUE_LEN - 1] = 0;
+    _queueHead = (_queueHead + 1) % RESP_QUEUE_COUNT;
+    _queueCount++;
+  }
+  // If queue is full, drop the message (unlikely with 8-slot buffer)
+}
+
+// ---------------------------------------------------------------------------
+void TCPHandler::_flushQueue()
+{
+  while (_queueCount > 0 && _client.availableForWrite() >= 64) {
+    _client.println(_respQueue[_queueTail]);
+    _queueTail = (_queueTail + 1) % RESP_QUEUE_COUNT;
+    _queueCount--;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +120,7 @@ void TCPHandler::disconnect()
   }
   _connected = false;
   _linePos = 0;
+  _queueHead = _queueTail = _queueCount = 0;
 }
 
 // ---------------------------------------------------------------------------

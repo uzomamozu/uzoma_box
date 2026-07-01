@@ -114,11 +114,17 @@ bool loadConfig(AppConfig &cfg)
     }
     else if (!strcmp(key, "playback_speed")) {
       float spd = atof(value);
-      if (spd >= 0.05f && spd <= 5.0f) cfg.playbackSpeed = spd;
+      if (spd >= 0.05f && spd <= 5.0f) {
+        cfg.playbackSpeed = spd;
+        Serial.printf("Config: playback_speed = %.2f\n", spd);
+      }
     }
     else if (!strcmp(key, "record_fps")) {
       int fps = atoi(value);
-      if (fps >= 5 && fps <= 60) cfg.recordFps = (uint16_t)fps;
+      if (fps >= 5 && fps <= 60) {
+        cfg.recordFps = (uint16_t)fps;
+        Serial.printf("Config: record_fps = %d\n", fps);
+      }
     }
     else if (!strcmp(key, "nickname")) {
       strncpy(cfg.nickname, value, sizeof(cfg.nickname) - 1);

@@ -153,6 +153,9 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
     return;
   }
 
+  // Reject malformed packets (must have at least header + 1 DMX byte)
+  if (len < ARTNET_HEADER_LEN + 1) return;
+
   // Check OpCode (ArtDMX = 0x5000 little-endian)
   uint16_t opCode = packet[8] | (packet[9] << 8);
   if (opCode != ARTNET_OP_DMX) return;
