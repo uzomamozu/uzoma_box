@@ -86,7 +86,7 @@ private:
   // Internal state
   bool          _playing;
   bool          _recording;
-  char          _currentFile[16];       // current playback filename
+  char          _currentFile[32];       // current playback filename
   char          _playlist[64][16];      // sequence of .BIN files
   int           _playlistCount;
   int           _playlistIndex;

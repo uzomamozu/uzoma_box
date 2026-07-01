@@ -29,7 +29,7 @@ void UdpDiscovery::poll(const char *nickname, const char *model, const char *fwV
         // Build response: comma-separated key=value pairs
         char response[256];
         snprintf(response, sizeof(response),
-          "MODEL=%s,NICK=%s,IP=%d.%d.%d.%d,FW=%s,TEMP=%d",
+          "MODEL=%.31s,NICK=%.31s,IP=%d.%d.%d.%d,FW=%.15s,TEMP=%d",
           model,
           nickname,
           localIp[0], localIp[1], localIp[2], localIp[3],

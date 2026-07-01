@@ -112,10 +112,15 @@ int ArtNetHandler::poll()
   // Process at most 1 packet per poll() call to avoid starving the rest of loop()
   int packetSize = _udp.parsePacket();
   if (packetSize > 0) {
-    if (packetSize > (int)sizeof(_packetBuffer)) {
-      packetSize = sizeof(_packetBuffer);
+    // Read into a fixed-size buffer; reject packets larger than the buffer
+    // (they are either malformed or jumbo frames this device can't handle)
+    int readSize = packetSize;
+    if (readSize > (int)sizeof(_packetBuffer)) {
+      readSize = sizeof(_packetBuffer);
     }
-    int n = _udp.read(_packetBuffer, packetSize);
+    int n = _udp.read(_packetBuffer, readSize);
+    // ArtDMX minimum: header (18) + at least 1 DMX byte.
+    // processPacket() will further validate the packet contents.
     if (n >= ARTNET_HEADER_LEN + 1) {
       processPacket(_packetBuffer, n);
       parsed++;

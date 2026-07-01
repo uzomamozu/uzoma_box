@@ -28,8 +28,8 @@ bool PlaybackController::playFile(const char *filename)
   if (!sdFileOpen(filename, FILE_READ)) {
     return false;
   }
-  strncpy(_currentFile, filename, 15);
-  _currentFile[15] = 0;
+  strncpy(_currentFile, filename, sizeof(_currentFile) - 1);
+  _currentFile[sizeof(_currentFile) - 1] = 0;
   _playing = true;
   _framesPlayed = 0;
   _lastFrameTime = micros();
@@ -58,8 +58,8 @@ bool PlaybackController::openNextFile()
   while (_playlistIndex < _playlistCount) {
     const char *fn = _playlist[_playlistIndex++];
     if (sdFileOpen(fn, FILE_READ)) {
-      strncpy(_currentFile, fn, 15);
-      _currentFile[15] = 0;
+      strncpy(_currentFile, fn, sizeof(_currentFile) - 1);
+      _currentFile[sizeof(_currentFile) - 1] = 0;
       _playing = true;
       _framesPlayed = 0;
       _lastFrameTime = micros();
@@ -166,8 +166,8 @@ bool PlaybackController::startRecording()
   if (!sdFileOpen(filename, O_WRITE | O_CREAT)) {
     return false;
   }
-  strncpy(_currentFile, filename, 15);
-  _currentFile[15] = 0;
+  strncpy(_currentFile, filename, sizeof(_currentFile) - 1);
+  _currentFile[sizeof(_currentFile) - 1] = 0;
   _recording = true;
   _framesPlayed = 0;
   _recordStartMs = millis();
