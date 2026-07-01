@@ -115,12 +115,12 @@ bool PlaybackController::playNextFrame(uint32_t *frameTimeUs, uint16_t *pixelCou
       //   _speedMult 5.0  → wait 5x shorter (fast forward)
       uint32_t scaledTime = (uint32_t)((float)frameTime / _speedMult);
 
-      // Wait for frame timing
+      // Non-blocking frame timing: if not enough time has elapsed,
+      // return false immediately. The caller will try again next loop().
       uint32_t now = micros();
-      uint32_t elapsed = now - _lastFrameTime;
-      while (elapsed < scaledTime) {
-        now = micros();
-        elapsed = now - _lastFrameTime;
+      int32_t elapsed = (int32_t)(now - _lastFrameTime);
+      if (elapsed < (int32_t)scaledTime) {
+        return false;  // not yet time — caller should keep _playing = true
       }
       _lastFrameTime = now;
       _framesPlayed++;

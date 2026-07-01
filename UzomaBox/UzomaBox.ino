@@ -22,6 +22,7 @@
 #include "TCPHandler.h"
 #include "PlaybackController.h"
 #include "UdpDiscovery.h"
+#include "MenuManager.h"
 
 // ========================  GLOBAL OBJECTS  ================================
 
@@ -31,6 +32,7 @@ ArtNetHandler      g_artNet;
 TCPHandler         g_tcp;
 PlaybackController g_playback;
 UdpDiscovery       g_discovery;
+MenuManager        g_menu;
 
 // Current operating mode
 OperatingMode      g_mode = MODE_ARTNET;
@@ -137,6 +139,10 @@ void setup()
 
   // ---- Apply playback speed from config ---------------------------------
   g_playback.setSpeed(g_config.playbackSpeed);
+
+  // ---- Initialise OLED menu system ----------------------------------------
+  g_menu.begin();
+  Serial.println("MenuManager OK");
 
   // ---- Set initial mode -------------------------------------------------
   g_mode = g_config.mode;
@@ -272,6 +278,9 @@ void loop()
     g_fpsFrames = 0;
     g_fpsLastPrint = now;
   }
+
+  // ---- Poll OLED menu system (non-blocking) ------------------------------
+  g_menu.update();
 
   // ---- Small yield for watchdog / USB tasks -----------------------------
   // On Teensy 4.1, delay(0) or yield() helps with background tasks.

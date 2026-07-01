@@ -5,11 +5,13 @@
 // DMX channels per universe
 #define DMX_PER_UNIVERSE    512
 
+// Static DMAMEM frame buffer allocation
+DMAMEM uint8_t ArtNetHandler::s_frameBuffer[FRAME_BUFFER_SIZE];
+
 // ---------------------------------------------------------------------------
 ArtNetHandler::ArtNetHandler()
   : _ledsPerStrip(512)
   , _totalPixels(512 * 8)
-  , _frameBuffer(nullptr)
   , _receiving(false)
   , _lastPacketTime(0)
   , _frameCb(nullptr)
@@ -18,14 +20,13 @@ ArtNetHandler::ArtNetHandler()
   , _frameStartTime(0)
   , _universesPerStrip(3)
 {
-  _frameBuffer = new uint8_t[_totalPixels * 3];
-  memset(_frameBuffer, 0, _totalPixels * 3);
+  memset(s_frameBuffer, 0, _totalPixels * 3);
   resetFrameState();
 }
 
 ArtNetHandler::~ArtNetHandler()
 {
-  delete[] _frameBuffer;
+  // No heap memory to free — s_frameBuffer is static
 }
 
 // ---------------------------------------------------------------------------
@@ -46,10 +47,10 @@ void ArtNetHandler::setLedsPerStrip(uint16_t n)
     _universesPerStrip = MAX_UNIVERSES_PER_STRIP;
   }
 
-  // Reallocate frame buffer
-  delete[] _frameBuffer;
-  _frameBuffer = new uint8_t[_totalPixels * 3];
-  memset(_frameBuffer, 0, _totalPixels * 3);
+  // Zero out the portion of the frame buffer we'll use (no heap reallocation)
+  size_t usedBytes = _totalPixels * 3;
+  if (usedBytes > FRAME_BUFFER_SIZE) usedBytes = FRAME_BUFFER_SIZE;
+  memset(s_frameBuffer, 0, usedBytes);
 
   resetFrameState();
 }
@@ -97,7 +98,7 @@ void ArtNetHandler::resetFrameState()
 void ArtNetHandler::flushFrame()
 {
   if (_frameCb) {
-    _frameCb(_frameBuffer, _totalPixels);
+    _frameCb(s_frameBuffer, _totalPixels);
   }
   resetFrameState();
 }
@@ -106,9 +107,10 @@ void ArtNetHandler::flushFrame()
 int ArtNetHandler::poll()
 {
   int parsed = 0;
-  int packetSize = _udp.parsePacket();
 
-  while (packetSize > 0) {
+  // Process at most 1 packet per poll() call to avoid starving the rest of loop()
+  int packetSize = _udp.parsePacket();
+  if (packetSize > 0) {
     if (packetSize > (int)sizeof(_packetBuffer)) {
       packetSize = sizeof(_packetBuffer);
     }
@@ -117,7 +119,6 @@ int ArtNetHandler::poll()
       processPacket(_packetBuffer, n);
       parsed++;
     }
-    packetSize = _udp.parsePacket();
   }
 
   // ---- Check receiving timeout ----
@@ -134,7 +135,7 @@ int ArtNetHandler::poll()
   if (_allUpdated) {
     _allUpdated = false;
     if (_frameCb) {
-      _frameCb(_frameBuffer, _totalPixels);
+      _frameCb(s_frameBuffer, _totalPixels);
     }
     resetFrameState();
   }
@@ -181,7 +182,7 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
           }
         }
 
-        // ---- Map DMX data into _frameBuffer ----
+        // ---- Map DMX data into frame buffer ----
         uint16_t ledOffset, ledCount;
         subUniverseRange(sub, ledOffset, ledCount);
 
@@ -192,9 +193,9 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
         for (uint16_t i = 0; i < channels / 3; i++) {
           uint16_t pixelIdx = absoluteOffset + i;
           if (pixelIdx >= _totalPixels) break;
-          _frameBuffer[pixelIdx * 3 + 0] = dmxData[i * 3 + 0];  // R
-          _frameBuffer[pixelIdx * 3 + 1] = dmxData[i * 3 + 1];  // G
-          _frameBuffer[pixelIdx * 3 + 2] = dmxData[i * 3 + 2];  // B
+          s_frameBuffer[pixelIdx * 3 + 0] = dmxData[i * 3 + 0];  // R
+          s_frameBuffer[pixelIdx * 3 + 1] = dmxData[i * 3 + 1];  // G
+          s_frameBuffer[pixelIdx * 3 + 2] = dmxData[i * 3 + 2];  // B
         }
 
         // ---- Check if this strip now has ALL its sub-universes ----

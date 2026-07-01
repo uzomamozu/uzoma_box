@@ -18,6 +18,10 @@
 // Prevents LED freeze when one universe is lost
 #define FRAME_TIMEOUT_MS     50
 
+// Maximum pixel capacity (512 LEDs/strip × 8 strips)
+#define MAX_TOTAL_PIXELS     (512 * 8)
+#define FRAME_BUFFER_SIZE    (MAX_TOTAL_PIXELS * 3)  // 12288 bytes
+
 class ArtNetHandler {
 public:
   ArtNetHandler();
@@ -38,7 +42,7 @@ public:
   void setFrameCallback(FrameCallback cb);
 
   // Get the raw RGB buffer for recording (totalPixels * 3 bytes)
-  const uint8_t *getFrameBuffer() const { return _frameBuffer; }
+  const uint8_t *getFrameBuffer() const { return s_frameBuffer; }
   uint16_t       getFrameSize()   const { return _totalPixels * 3; }
 
   // Check if we are actively receiving ArtNet
@@ -54,10 +58,14 @@ public:
   void setLedsPerStrip(uint16_t n);
 
 private:
+  // Static DMAMEM frame buffer — no heap allocation
+  // Shared across all instances; only one ArtNetHandler should exist.
+  static DMAMEM uint8_t s_frameBuffer[FRAME_BUFFER_SIZE];
+
   // Reset all per-frame flags and state
   void resetFrameState();
 
-  // Parse a single ArtDMX packet and write DMX data into _frameBuffer
+  // Parse a single ArtDMX packet and write DMX data into the frame buffer
   void processPacket(const uint8_t *packet, int len);
 
   // Fire the frame callback and reset for next frame
@@ -75,7 +83,7 @@ private:
   uint16_t      _startUniverse[8];               // first universe for each of the 8 strips
   uint16_t      _ledsPerStrip;
   uint16_t      _totalPixels;
-  uint8_t      *_frameBuffer;                    // RGB interleaved, totalPixels * 3 bytes
+  // _frameBuffer replaced by static s_frameBuffer above
   bool          _receiving;
   uint32_t      _lastPacketTime;                 // ms
   uint8_t       _universesPerStrip;

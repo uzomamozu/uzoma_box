@@ -11,7 +11,7 @@
 // DMAMEM must be statically allocated on Teensy.
 // We allocate for the maximum possible size; the actual used amount is set in begin().
 DMAMEM static int s_displayMemory[MAX_LEDS_PER_STRIP * 8];
-static int s_drawingMemory[MAX_LEDS_PER_STRIP * 8];
+DMAMEM static int s_drawingMemory[MAX_LEDS_PER_STRIP * 8];
 
 // ---------------------------------------------------------------------------
 // Color-order permutation lookup table
