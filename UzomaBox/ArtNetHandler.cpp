@@ -66,17 +66,18 @@ void ArtNetHandler::subUniverseRange(uint8_t sub, uint16_t &offset, uint16_t &co
   uint16_t ledsPerSub = DMX_PER_UNIVERSE / 3;   // 170
   offset = sub * ledsPerSub;
 
-  if (sub < _universesPerStrip - 1) {
-    count = ledsPerSub;
-  } else {
-    // Last sub-universe gets whatever is left
-    count = _ledsPerStrip - offset;
-  }
-
-  // Clamp: if offset exceeds strip length, this sub is empty
+  // Guard: if this sub starts at or past the end, it's empty
   if (offset >= _ledsPerStrip) {
     offset = _ledsPerStrip;
     count = 0;
+    return;
+  }
+
+  if (sub < _universesPerStrip - 1) {
+    count = ledsPerSub;
+  } else {
+    // Last sub-universe gets whatever is left (offset < _ledsPerStrip guaranteed)
+    count = _ledsPerStrip - offset;
   }
 }
 

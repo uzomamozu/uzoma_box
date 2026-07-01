@@ -52,6 +52,9 @@ unsigned long sdFilePosition(void);
 // ---- Seek (for re-playing) ------------------------------------------------
 bool sdFileSeek(unsigned long pos);
 
+// ---- Seek relative to current position (for fast skip) --------------------
+bool sdFileSeekRelative(long delta);
+
 // ---- Delete a file --------------------------------------------------------
 bool sdFileDelete(const char *filename);
 

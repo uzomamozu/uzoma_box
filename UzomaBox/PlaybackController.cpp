@@ -55,22 +55,20 @@ int PlaybackController::playSequence()
 // ---------------------------------------------------------------------------
 bool PlaybackController::openNextFile()
 {
-  if (_playlistIndex >= _playlistCount) {
-    stop();
-    return false;
+  while (_playlistIndex < _playlistCount) {
+    const char *fn = _playlist[_playlistIndex++];
+    if (sdFileOpen(fn, FILE_READ)) {
+      strncpy(_currentFile, fn, 15);
+      _currentFile[15] = 0;
+      _playing = true;
+      _framesPlayed = 0;
+      _lastFrameTime = micros();
+      return true;
+    }
   }
-
-  const char *fn = _playlist[_playlistIndex++];
-  if (!sdFileOpen(fn, FILE_READ)) {
-    // Try next file recursively
-    return openNextFile();
-  }
-  strncpy(_currentFile, fn, 15);
-  _currentFile[15] = 0;
-  _playing = true;
-  _framesPlayed = 0;
-  _lastFrameTime = micros();
-  return true;
+  // Exhausted all files in the playlist
+  stop();
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +135,8 @@ bool PlaybackController::playNextFrame(uint32_t *frameTimeUs, uint16_t *pixelCou
 
     } else {
       // Unknown header – skip 1 byte and retry (should not happen)
-      sdCardSkip(1);
+      // Use direct seek to avoid per-byte buffered-read overhead
+      sdFileSeekRelative(1);
       continue;   // try next frame
     }
   }

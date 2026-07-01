@@ -726,13 +726,12 @@ void setMode(OperatingMode newMode)
 
 void printStatus()
 {
-  // Build comma-separated start_universe string
+  // Build comma-separated start_universe string (bounds-safe)
   char su[64];
-  su[0] = 0;
+  int pos = 0;
   for (int i = 0; i < 8; i++) {
-    if (i > 0) strcat(su, ",");
-    char tmp[8]; sprintf(tmp, "%u", g_config.startUniverse[i]);
-    strcat(su, tmp);
+    pos += snprintf(su + pos, sizeof(su) - pos, "%s%u",
+                    i > 0 ? "," : "", g_config.startUniverse[i]);
   }
 
   char buf[512];
@@ -783,6 +782,7 @@ void runTestAnimation()
 {
   uint8_t r, g, b;
   uint16_t stripLen = g_leds.getLedsPerStrip();
+  uint16_t totalPixels = g_leds.totalPixels();
 
   if (g_testPattern == 0) {
     // Pattern 0: RGBW Cycle (R→G→B→W→R repeating, 1s per color)
@@ -817,28 +817,25 @@ void runTestAnimation()
     r = 0; g = 0; b = 255;
   }
 
-  // Fill — either all outputs or a single output
+  // Fill using bulk memset into drawing memory (faster than per-pixel setPixel)
+  uint8_t *draw = g_leds.getDrawingMemory();
   if (g_testOutput == 255) {
-    for (uint8_t s = 0; s < 8; s++) {
-      for (uint16_t i = 0; i < stripLen; i++) {
-        g_leds.setPixel(s, i, r, g, b);
-      }
+    // All strips: fill entire drawing memory with the computed color
+    uint8_t *dst = draw;
+    for (uint16_t i = 0; i < totalPixels; i++) {
+      *dst++ = r; *dst++ = g; *dst++ = b;
     }
   } else {
-    // First black out all strips
-    for (uint8_t s = 0; s < 8; s++) {
-      for (uint16_t i = 0; i < stripLen; i++) {
-        g_leds.setPixel(s, i, 0, 0, 0);
-      }
-    }
-    // Then set only the selected output
+    // Single strip: zero all, then fill only the target strip
+    memset(draw, 0, totalPixels * 3);
     uint8_t s = g_testOutput;
+    uint8_t *dst = draw + s * stripLen * 3;
     for (uint16_t i = 0; i < stripLen; i++) {
-      g_leds.setPixel(s, i, r, g, b);
+      *dst++ = r; *dst++ = g; *dst++ = b;
     }
   }
   g_leds.show();
-  delay(16);
+  // No delay(16) — animation timing handled by loop cadence
 }
 
 // ========================  REBOOT  ========================================

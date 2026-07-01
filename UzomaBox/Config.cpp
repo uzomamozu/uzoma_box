@@ -155,20 +155,19 @@ bool saveConfig(const AppConfig &cfg)
                cfg.mac[3], cfg.mac[4], cfg.mac[5]);
   sdFilePrintf("led_width=%u\n", cfg.ledWidth);
 
-  // Start universes
-  buf[0] = 0;
+  // Start universes — snprintf with position tracking (bounds-safe)
+  int pos = 0;
   for (int i = 0; i < 8; i++) {
-    if (i > 0) strcat(buf, ",");
-    char tmp[8]; sprintf(tmp, "%u", cfg.startUniverse[i]);
-    strcat(buf, tmp);
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "%s%u",
+                    i > 0 ? "," : "", cfg.startUniverse[i]);
   }
   sdFilePrintf("start_universe=%s\n", buf);
 
   // Output active
-  buf[0] = 0;
+  pos = 0;
   for (int i = 0; i < 8; i++) {
-    if (i > 0) strcat(buf, ",");
-    strcat(buf, cfg.outputActive[i] ? "1" : "0");
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "%s%s",
+                    i > 0 ? "," : "", cfg.outputActive[i] ? "1" : "0");
   }
   sdFilePrintf("output_active=%s\n", buf);
 

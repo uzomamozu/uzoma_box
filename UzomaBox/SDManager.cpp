@@ -32,15 +32,12 @@ bool sdCardRead(void *ptr, unsigned int len)
   return true;
 }
 
-// ---- Skip bytes (discard) --------------------------------------------------
+// ---- Skip bytes (discard) — uses seek for efficiency -----------------------
 void sdCardSkip(unsigned int len)
 {
-  uint8_t tmp[256];
-  while (len > 0) {
-    unsigned int n = len;
-    if (n > sizeof(tmp)) n = sizeof(tmp);
-    sdCardRead(tmp, n);
-    len -= n;
+  // Use relative seek instead of reading-and-discarding
+  if (g_opened) {
+    sdFileSeekRelative((long)len);
   }
 }
 
@@ -123,8 +120,7 @@ int sdListBinFiles(char names[][16], int maxCount)
       const char *fn = entry.name();
       // Check for .BIN extension (case-insensitive)
       size_t len = strlen(fn);
-      if (len >= 4 &&
-          (fn[len-4] == '.' || fn[len-4] == '.') &&
+      if (len >= 4 && fn[len-4] == '.' &&
           toupper(fn[len-3]) == 'B' &&
           toupper(fn[len-2]) == 'I' &&
           toupper(fn[len-1]) == 'N') {
@@ -173,12 +169,27 @@ unsigned long sdFilePosition(void)
   return g_file.position();
 }
 
-// ---- Seek ------------------------------------------------------------------
+// ---- Seek (for re-playing) ------------------------------------------------
 bool sdFileSeek(unsigned long pos)
 {
   if (!g_opened) return false;
   g_bufPos = g_bufLen = 0;            // invalidate buffer
   return g_file.seek(pos);
+}
+
+// ---- Seek relative to current position (for fast skip) --------------------
+bool sdFileSeekRelative(long delta)
+{
+  if (!g_opened) return false;
+  unsigned long currentPos = g_file.position();
+  // If delta would go negative, clamp to 0
+  if ((long)currentPos + delta < 0) {
+    currentPos = 0;
+  } else {
+    currentPos = (unsigned long)((long)currentPos + delta);
+  }
+  g_bufPos = g_bufLen = 0;            // invalidate buffer
+  return g_file.seek(currentPos);
 }
 
 // ---- Delete a file ---------------------------------------------------------
