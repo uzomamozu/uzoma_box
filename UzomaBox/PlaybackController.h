@@ -5,11 +5,19 @@
 #include "SDManager.h"
 
 // .BIN file header constants
-#define BIN_HEADER_VIDEO   '*'
-#define BIN_HEADER_AUDIO   '%'
+#define BIN_HEADER_VIDEO    '*'   // v1 (legacy): 1B type + 2B pixelCount + 2B frameTime = 5B header
+#define BIN_HEADER_VIDEO_V2 '+'   // v2: 1B type + 2B pixelCount + 4B frameTime = 7B header
+#define BIN_HEADER_AUDIO    '%'
 
-// Frame header:  1 byte type + 2 bytes pixel count (LE) + 2 bytes frame time µs (LE)
-#define BIN_FRAME_HEADER_LEN  5
+// Frame header lengths
+#define BIN_FRAME_HEADER_LEN    5   // v1
+#define BIN_FRAME_HEADER_LEN_V2 7   // v2
+
+// Maximum frame size: 7B header + 512 LEDs/strip × 16 strips × 3 bytes = 24,576 + 7
+#define MAX_FRAME_SIZE          (BIN_FRAME_HEADER_LEN_V2 + 512 * 16 * 3)
+
+// Double-buffer count for SD write buffering during recording
+#define REC_BUFFER_COUNT  2
 
 class PlaybackController {
 public:
@@ -43,7 +51,7 @@ public:
   bool startRecording();
 
   // Write one video frame to the .BIN file.
-  // rgbData: RGB byte-triplets for all 8 strips (totalPixels * 3 bytes)
+  // rgbData: RGB byte-triplets for all 16 strips (totalPixels * 3 bytes)
   // frameTimeUs: frame duration in microseconds (use 0 for live capture)
   bool writeFrame(const uint8_t *rgbData, uint16_t totalPixels, uint32_t frameTimeUs);
 
@@ -83,6 +91,9 @@ private:
   // Open the next file in the sequence
   bool openNextFile();
 
+  // Flush any pending recording buffer to SD
+  bool _flushRecBuffer();
+
   // Internal state
   bool          _playing;
   bool          _recording;
@@ -94,6 +105,14 @@ private:
   uint32_t      _lastFrameTime;         // micros() at last frame
   uint32_t      _recordStartMs;         // millis() when recording started
   float         _speedMult;             // playback speed multiplier (0.05-5.0)
+
+  // Recording double-buffer state
+  uint8_t       _recBufIdx;             // current write buffer index (0 or 1)
+  bool          _recBufDirty[REC_BUFFER_COUNT];  // true when buffer has pending data
+  uint16_t      _recBufLen[REC_BUFFER_COUNT];    // bytes pending per buffer
+
+  // DMAMEM recording buffers (one for active capture, one for SD flush)
+  DMAMEM static uint8_t s_recBuffer[REC_BUFFER_COUNT][MAX_FRAME_SIZE];
 };
 
 #endif
