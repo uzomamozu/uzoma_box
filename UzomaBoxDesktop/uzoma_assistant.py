@@ -194,13 +194,26 @@ class DeviceConfigWindow:
         self._status_data = {}
         self._file_list = []
         self._progress_active = False
-        self._start_univ_dirty = [False] * 8
+        self._num_outputs = 8  # default until we query the firmware
+        self._start_univ_dirty = []
 
         self._tcp = TcpClientPersistent(self.ip, timeout=3.0)
         try:
             self._tcp.connect()
+            # Query the firmware for its actual output count
+            lines = self._tcp.send_and_recv("NUM_OUTPUTS?")
+            for line in lines:
+                if line.startswith("NUM_OUTPUTS="):
+                    try:
+                        self._num_outputs = int(line.split("=", 1)[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+                    break
         except:
             pass
+
+        # Initialize dirty flags with the correct count
+        self._start_univ_dirty = [False] * self._num_outputs
 
         self.win = tk.Toplevel(parent)
         self.win.title("UzomaBox - %s [%s]" % (device_info.get("nick", self.ip), self.ip))
@@ -268,6 +281,9 @@ class DeviceConfigWindow:
         ttk.Label(frame, text="Temperature:").grid(row=6, column=0, sticky=tk.W, padx=(0,8), pady=2)
         self.temp_var = tk.StringVar(value=self.device.get("temp", "--") + "°C")
         ttk.Label(frame, textvariable=self.temp_var).grid(row=6, column=1, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Outputs:").grid(row=7, column=0, sticky=tk.W, padx=(0,8), pady=2)
+        self.outputs_var = tk.StringVar(value=str(self._num_outputs))
+        ttk.Label(frame, textvariable=self.outputs_var).grid(row=7, column=1, sticky=tk.W, pady=2)
 
     # ---- LED Tab (Tab 2) ----
     def _build_led_tab(self):
@@ -294,7 +310,7 @@ class DeviceConfigWindow:
         self.start_univ_vars = []
         self.end_univ_vars = []
         self.subnet_univ_vars = []
-        for i in range(8):
+        for i in range(self._num_outputs):
             row_frame = ttk.Frame(frame)
             row_frame.pack(fill=tk.X, pady=1)
             ttk.Label(row_frame, text="%d" % (i + 1), width=5).pack(side=tk.LEFT, padx=(2, 0))
@@ -352,7 +368,7 @@ class DeviceConfigWindow:
             self.subnet_univ_vars[idx].set("--")
 
     def _update_all_univ_ranges(self):
-        for i in range(8):
+        for i in range(self._num_outputs):
             self._update_univ_range(i)
 
     # ---- ArtNet Tab (Tab 3) ----
@@ -516,7 +532,8 @@ class DeviceConfigWindow:
         single_frame.pack(anchor=tk.W, padx=(8,0), pady=1)
         ttk.Radiobutton(single_frame, text="Single output", variable=self.test_output_all,
                         value=False, command=self._on_test_output_toggle).pack(side=tk.LEFT)
-        self.test_output_combo = ttk.Combobox(single_frame, values=[str(i+1) for i in range(8)],
+        self.test_output_combo = ttk.Combobox(single_frame,
+                                              values=[str(i+1) for i in range(self._num_outputs)],
                                               width=4, state="readonly")
         self.test_output_combo.bind("<<ComboboxSelected>>", lambda e: self._send_test_output())
         self.test_output_combo.pack(side=tk.LEFT, padx=(4,0))
@@ -542,7 +559,9 @@ class DeviceConfigWindow:
         if self.test_output_all.get():
             self._cmd_send("COMMAND:TEST_OUTPUT=255")
         else:
-            self._cmd_send("COMMAND:TEST_OUTPUT=%s" % str(int(self.test_output_combo.get()) - 1))
+            strip_index = int(self.test_output_combo.get()) - 1
+            if strip_index < self._num_outputs:
+                self._cmd_send("COMMAND:TEST_OUTPUT=%s" % strip_index)
 
     def _send_test_pattern(self):
         """Send the current pattern to the Teensy immediately."""
@@ -617,7 +636,7 @@ class DeviceConfigWindow:
         time.sleep(0.05)
         self._cmd_send("CONFIG:led_width=%s" % led_w)
         self._cmd_send("CONFIG:output_active=%s" % outputs)
-        self._start_univ_dirty = [False] * 8
+        self._start_univ_dirty = [False] * self._num_outputs
         self.log("LED settings updated on %s (rebooting)" % self.ip)
         self.win.destroy()
 
@@ -770,11 +789,19 @@ class DeviceConfigWindow:
         elif k == "start_universe":
             parts = v.split(",")
             for i, p in enumerate(parts):
-                if i < 8 and not self._start_univ_dirty[i]:
+                if i < self._num_outputs and not self._start_univ_dirty[i]:
                     self.start_univ_vars[i].set(p.strip())
             self._update_all_univ_ranges()
         elif k == "record_fps":
             self.record_fps_var.set(v)
+        elif k == "output_count":
+            try:
+                new_count = int(v)
+                if new_count != self._num_outputs:
+                    self._num_outputs = new_count
+                    self.outputs_var.set(str(self._num_outputs))
+            except (ValueError, IndexError):
+                pass
         elif k == "mode":
             self.mode_var = tk.StringVar(value=v)
         elif k == "recording":

@@ -147,6 +147,7 @@ int parseCommand(const char *cmd)
   else if (!strncmp(cmd, "DELETE:", 7))    return CMD_DELETE;
   else if (!strcmp(cmd, "IDENTIFY"))       return CMD_IDENTIFY;
   else if (!strcmp(cmd, "PING"))           return CMD_PING;
+  else if (!strcmp(cmd, "NUM_OUTPUTS?"))   return CMD_NUM_OUTPUTS;
   else if (!strncmp(cmd, "COMMAND:TEST_PATTERN=", 20)) return CMD_TEST_PATTERN;
   else if (!strncmp(cmd, "COMMAND:TEST_OUTPUT=", 20))  return CMD_TEST_OUTPUT;
   else if (!strncmp(cmd, "REC:START_MODE=", 15))      return CMD_REC_START_MODE;

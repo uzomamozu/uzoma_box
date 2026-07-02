@@ -647,6 +647,14 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       g_tcp.sendResponse("PONG");
       break;
 
+    case CMD_NUM_OUTPUTS:
+      {
+        char reply[32];
+        snprintf(reply, sizeof(reply), "NUM_OUTPUTS=%d", NUM_OUTPUTS);
+        g_tcp.sendResponse(reply);
+      }
+      break;
+
     case CMD_STATUS:
       printStatus();
       break;
