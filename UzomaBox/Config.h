@@ -12,9 +12,8 @@
 
 // ---------------------------------------------------------------------------
 // Number of LED output channels.
-// 8  → single OctoWS2811 (standard, main branch)
-// 16 → dual OctoWS2811 (this branch: first 8 via OctoWS2811 adaptor,
-//       next 8 via a second OctoWS2811 instance on alternate Teensy 4.1 pins)
+// 16 → dual OctoWS2811 (first 8 via OctoWS2811 instance #1 on default pins,
+//       next 8 via OctoWS2811 instance #2 on alternate pins)
 // ---------------------------------------------------------------------------
 #define NUM_OUTPUTS  16
 
@@ -31,7 +30,7 @@
 #define PIN_BTN_UP      22
 #define PIN_BTN_DOWN    23
 #define PIN_BTN_SELECT   9
-#define PIN_BTN_BACK    10
+#define PIN_BTN_BACK    33
 
 enum OperatingMode {
   MODE_ARTNET = 0,

@@ -18,9 +18,9 @@
 // Prevents LED freeze when one universe is lost
 #define FRAME_TIMEOUT_MS     50
 
-// Maximum pixel capacity (512 LEDs/strip × 8 strips)
-#define MAX_TOTAL_PIXELS     (512 * 8)
-#define FRAME_BUFFER_SIZE    (MAX_TOTAL_PIXELS * 3)  // 12288 bytes
+// Maximum pixel capacity (512 LEDs/strip × 16 strips)
+#define MAX_TOTAL_PIXELS     (512 * 16)
+#define FRAME_BUFFER_SIZE    (MAX_TOTAL_PIXELS * 3)  // 24576 bytes
 
 class ArtNetHandler {
 public:
@@ -36,7 +36,7 @@ public:
 
   // Callback: user-provided function called when a new frame is assembled.
   // Parameters: (const uint8_t *rgbData, uint16_t totalPixels)
-  // rgbData contains all 8 strips interleaved in strip-major order.
+  // rgbData contains all 16 strips interleaved in strip-major order.
   typedef void (*FrameCallback)(const uint8_t *, uint16_t);
 
   void setFrameCallback(FrameCallback cb);
@@ -51,8 +51,8 @@ public:
   // Reset receiving timeout
   void resetTimeout();
 
-  // Update start universe mapping
-  void setUniverseMapping(const uint16_t startUniv[8]);
+  // Update start universe mapping (array of 16 entries)
+  void setUniverseMapping(const uint16_t startUniv[16]);
 
   // Number of LEDs per strip (needs to be set before begin or on config change)
   void setLedsPerStrip(uint16_t n);
@@ -80,7 +80,7 @@ private:
   EthernetUDP   _udp;
   uint8_t       _packetBuffer[ARTNET_HEADER_LEN + ARTNET_DMX_LEN + 4];
 
-  uint16_t      _startUniverse[8];               // first universe for each of the 8 strips
+  uint16_t      _startUniverse[16];               // first universe for each of the 16 strips
   uint16_t      _ledsPerStrip;
   uint16_t      _totalPixels;
   // _frameBuffer replaced by static s_frameBuffer above
@@ -91,8 +91,8 @@ private:
   FrameCallback _frameCb;
 
   // Per-frame assembly tracking
-  bool          _universeReceived[8];            // true when strip has all sub-universes
-  bool          _universeSubReceived[8][MAX_UNIVERSES_PER_STRIP]; // per sub-universe flag
+  bool          _universeReceived[16];            // true when strip has all sub-universes
+  bool          _universeSubReceived[16][MAX_UNIVERSES_PER_STRIP]; // per sub-universe flag
   bool          _allUpdated;                     // true if all strips have data
   bool          _frameStarted;                   // true once at least 1 sub-universe arrived
   uint32_t      _frameStartTime;                 // ms when first sub-universe of this frame arrived

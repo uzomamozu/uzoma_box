@@ -11,7 +11,7 @@ DMAMEM uint8_t ArtNetHandler::s_frameBuffer[FRAME_BUFFER_SIZE];
 // ---------------------------------------------------------------------------
 ArtNetHandler::ArtNetHandler()
   : _ledsPerStrip(512)
-  , _totalPixels(512 * 8)
+  , _totalPixels(512 * 16)
   , _receiving(false)
   , _lastPacketTime(0)
   , _frameCb(nullptr)
@@ -39,7 +39,7 @@ void ArtNetHandler::begin()
 void ArtNetHandler::setLedsPerStrip(uint16_t n)
 {
   _ledsPerStrip = n;
-  _totalPixels = n * 8;
+  _totalPixels = n * 16;
 
   // Recalculate universes per strip: ceil(n * 3 / 512)
   _universesPerStrip = (uint8_t)((n * 3 + DMX_PER_UNIVERSE - 1) / DMX_PER_UNIVERSE);
@@ -84,7 +84,7 @@ void ArtNetHandler::subUniverseRange(uint8_t sub, uint16_t &offset, uint16_t &co
 // ---------------------------------------------------------------------------
 void ArtNetHandler::resetFrameState()
 {
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 16; i++) {
     _universeReceived[i] = false;
     for (int s = 0; s < MAX_UNIVERSES_PER_STRIP; s++) {
       _universeSubReceived[i][s] = false;
@@ -177,7 +177,7 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   uint8_t ups = _universesPerStrip;
 
   // Find which strip and which sub-universe this universe belongs to
-  for (uint8_t strip = 0; strip < 8; strip++) {
+  for (uint8_t strip = 0; strip < 16; strip++) {
     uint16_t base = _startUniverse[strip];
     for (uint8_t sub = 0; sub < ups; sub++) {
       if (universe == base + sub) {
@@ -219,7 +219,7 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
 
         // ---- Check if ALL strips are now complete ----
         bool allDone = true;
-        for (uint8_t s = 0; s < 8; s++) {
+        for (uint8_t s = 0; s < 16; s++) {
           if (!_universeReceived[s]) { allDone = false; break; }
         }
         _allUpdated = allDone;
@@ -246,7 +246,7 @@ void ArtNetHandler::resetTimeout()
 }
 
 // ---------------------------------------------------------------------------
-void ArtNetHandler::setUniverseMapping(const uint16_t startUniv[8])
+void ArtNetHandler::setUniverseMapping(const uint16_t startUniv[16])
 {
   memcpy(_startUniverse, startUniv, sizeof(_startUniverse));
   resetFrameState();

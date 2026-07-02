@@ -1,18 +1,13 @@
 /*  UzomaBox.ino
- *  Teensy 4.1 multi-mode LED controller
- *
- *  Three modes:
- *    - ArtNet:  receives pixel data over ArtNet UDP (port 6454)
- *    - Playback: plays .BIN files from SD card
- *    - Record:   records ArtNet data to .BIN files on SD card
- *
- *  TCP server on port 8888 accepts commands from a desktop app.
+ *  Teensy 4.1 multi-mode LED controller (16-output branch)
  *
  *  Hardware:
- *    Teensy 4.1 + OctoWS2811 Adaptor
- *    8 × WS2811 LED strips (default 512 LEDs each)
+ *    Teensy 4.1 + dual OctoWS2811
+ *    16 × WS2811 LED strips (default 512 LEDs each)
+ *    74HCT245 buffer + 100Ω resistors on each LED output pin
  *    SD card on built-in microSD slot (BUILTIN_SDCARD)
  *    NativeEthernet for ArtNet + TCP
+ *    OLED display (I2C) + 4 buttons
  */
 
 #include "Config.h"
@@ -55,7 +50,7 @@ uint32_t           g_frameCounter    = 0;
 // Test mode state
 uint32_t           g_testStartMs     = 0;
 uint8_t            g_testPattern     = 0;  // 0=RGBW cycle, 1=rainbow fade, 2=red, 3=green, 4=blue
-uint8_t            g_testOutput      = 255; // 255=all, 0-7=specific strip
+uint8_t            g_testOutput      = 255; // 255=all, 0-15=specific strip
 
 // Non-blocking IDENTIFY blink state
 bool               g_identifyActive     = false;
@@ -69,6 +64,10 @@ uint32_t           g_lastDiscoveryPoll  = 0;
 // Incoming ArtNet FPS meter
 uint32_t           g_fpsFrames = 0;
 uint32_t           g_fpsLastPrint = 0;
+
+// Playback temporary buffer (max 16 strips × 512 LEDs × 3 bytes = 24576)
+// Shared between playback and test mode to avoid stack overflow
+DMAMEM static uint8_t g_playbackBuffer[512 * 16 * 3];
 
 // ========================  FORWARD DECLARATIONS  ==========================
 
@@ -85,7 +84,7 @@ void setup()
 {
   Serial.begin(115200);
   delay(100);
-  Serial.println("\n=== UzomaBox ===");
+  Serial.println("\n=== UzomaBox (16 outputs) ===");
 
   // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) ------------
   if (!sdInit()) {
@@ -108,11 +107,11 @@ void setup()
                             g_config.mac[3], g_config.mac[4], g_config.mac[5]);
   Serial.print("LEDs/strip: "); Serial.println(g_config.ledWidth);
 
-  // ---- Initialise LED controller ----------------------------------------
+  // ---- Initialise LED controller (dual OctoWS2811) ------------------------
   g_leds.begin(g_config.ledWidth);
   g_leds.setOutputMask(g_config.outputActive);
   g_leds.show();
-  Serial.println("LEDs OK");
+  Serial.println("LEDs OK (16 outputs)");
 
   // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
   Ethernet.begin(g_config.mac, g_config.ip);
@@ -210,47 +209,19 @@ void loop()
 
         if (g_playback.playNextFrame(&frameTimeUs, &pixelCount)) {
           uint16_t dataSize = pixelCount * 3;
-          uint8_t *drawMem = g_leds.getDrawingMemory();
-          uint16_t maxSize  = g_leds.totalPixels() * 3;
+          uint16_t maxSize  = g_leds.totalPixels() * 3;  // _ledsPerStrip * 16 * 3
 
           if (dataSize > maxSize) {
-            // File has more pixels than we can display:
-            // read what fits, then skip the rest so SD stays aligned
-            if (sdCardRead(drawMem, maxSize)) {
-              // Apply color-order reordering inline on the drawing memory
-              {
-                const uint8_t *perm = colorOrderPerm[g_leds.getColorOrder()];
-                uint16_t pxCount = maxSize / 3;
-                for (uint16_t pi = 0; pi < pxCount; pi++) {
-                  uint8_t *px = drawMem + pi * 3;
-                  uint8_t tmp[3] = {px[0], px[1], px[2]};
-                  px[0] = tmp[perm[0]];
-                  px[1] = tmp[perm[1]];
-                  px[2] = tmp[perm[2]];
-                }
-              }
-              sdCardSkip(dataSize - maxSize);
+            // File has more pixels than we can display
+            if (sdCardRead(g_playbackBuffer, maxSize)) {
+              g_leds.fillFromBin(g_playbackBuffer, maxSize);
               g_leds.show();
             }
+            sdCardSkip(dataSize - maxSize);  // keep SD aligned
           } else {
-            // File has fewer (or equal) pixels:
-            // read everything, zero-fill the rest of drawing memory
-            if (sdCardRead(drawMem, dataSize)) {
-              // Apply color-order reordering inline on the drawing memory
-              {
-                const uint8_t *perm = colorOrderPerm[g_leds.getColorOrder()];
-                uint16_t pxCount = dataSize / 3;
-                for (uint16_t pi = 0; pi < pxCount; pi++) {
-                  uint8_t *px = drawMem + pi * 3;
-                  uint8_t tmp[3] = {px[0], px[1], px[2]};
-                  px[0] = tmp[perm[0]];
-                  px[1] = tmp[perm[1]];
-                  px[2] = tmp[perm[2]];
-                }
-              }
-              if (dataSize < maxSize) {
-                memset(drawMem + dataSize, 0, maxSize - dataSize);
-              }
+            // File has fewer (or equal) pixels
+            if (sdCardRead(g_playbackBuffer, dataSize)) {
+              g_leds.fillFromBin(g_playbackBuffer, dataSize);
               g_leds.show();
             }
           }
@@ -299,7 +270,7 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
   if (g_recArmed && !g_recordingActive) {
     bool shouldStart = false;
     if (g_recStartMode == 0) {
-      shouldStart = true;  // Immediate — shouldn't get here armed, but safe
+      shouldStart = true;  // Immediate
     } else if (g_recStartMode == 1) {
       // First non-zero: check if any pixel has data > 0
       for (uint16_t i = 0; i < totalPixels * 3; i++) {
@@ -512,9 +483,9 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         }
       } else if (!strncmp(kv, "start_universe=", 15)) {
         int idx = 0;
-        char val[64]; strncpy(val, kv + 15, 63); val[63] = 0;
+        char val[128]; strncpy(val, kv + 15, 127); val[127] = 0;
         char *tok = strtok(val, ",");
-        while (tok && idx < 8) {
+        while (tok && idx < NUM_OUTPUTS) {
           g_config.startUniverse[idx++] = (uint16_t)atoi(tok);
           tok = strtok(NULL, ",");
         }
@@ -524,9 +495,9 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         rebootTeensy();
       } else if (!strncmp(kv, "output_active=", 14)) {
         int idx = 0;
-        char val[32]; strncpy(val, kv + 14, 31); val[31] = 0;
+        char val[64]; strncpy(val, kv + 14, 63); val[63] = 0;
         char *tok = strtok(val, ",");
-        while (tok && idx < 8) {
+        while (tok && idx < NUM_OUTPUTS) {
           g_config.outputActive[idx++] = (atoi(tok) != 0);
           tok = strtok(NULL, ",");
         }
@@ -652,11 +623,11 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       {
         int out = atoi(cmdStr + 20); // skip "COMMAND:TEST_OUTPUT="
         Serial.printf("DEBUG: CMD_TEST_OUTPUT parsed out=%d from: %s\n", out, cmdStr);
-        if (out == 255 || (out >= 0 && out <= 7)) {
+        if (out == 255 || (out >= 0 && out <= 15)) {
           g_testOutput = (uint8_t)out;
           g_tcp.sendResponse("OK:test output set");
         } else {
-          g_tcp.sendResponse("ERR:invalid test output (0-7 or 255)");
+          g_tcp.sendResponse("ERR:invalid test output (0-15 or 255)");
         }
       }
       break;
@@ -727,9 +698,9 @@ void setMode(OperatingMode newMode)
 void printStatus()
 {
   // Build comma-separated start_universe string (bounds-safe)
-  char su[64];
+  char su[128];
   int pos = 0;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < NUM_OUTPUTS; i++) {
     pos += snprintf(su + pos, sizeof(su) - pos, "%s%u",
                     i > 0 ? "," : "", g_config.startUniverse[i]);
   }
@@ -752,7 +723,8 @@ void printStatus()
     "record_time=%lu\r\n"
     "start_universe=%s\r\n"
     "file_pos=%lu\r\n"
-    "file_total=%lu",
+    "file_total=%lu"
+    "output_count=%d",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" :
     (g_mode == MODE_RECORD)   ? "record" : "test",
@@ -771,7 +743,8 @@ void printStatus()
     g_playback.getRecordTime(),
     su,
     (g_playback.isPlaying() ? g_playback.filePosition() : 0),
-    (g_playback.isPlaying() ? g_playback.fileSize() : 0)
+    (g_playback.isPlaying() ? g_playback.fileSize() : 0),
+    NUM_OUTPUTS
   );
   g_tcp.sendResponse(buf);
 }
@@ -794,11 +767,9 @@ void runTestAnimation()
     else                { r = 255; g = 255; b = 255; }
   } else if (g_testPattern == 1) {
     // Pattern 1: Color Fade (hue wheel, no white gaps, smooth)
-    // Hue sweeps 0..256 every 3 seconds, then wraps cleanly
     uint32_t elapsed = millis() - g_testStartMs;
-    uint16_t hue = (elapsed * 85UL) / 1000UL;  // ~85 steps/sec, wraps at 256
-    hue &= 0xFF;  // keep in 0..255
-    // Convert hue (0..255) to RGB using HSV algorithm (saturation=255, value=255)
+    uint16_t hue = (elapsed * 85UL) / 1000UL;
+    hue &= 0xFF;
     uint8_t region = hue / 43;
     uint8_t remainder = (hue - region * 43) * 6;
     switch (region) {
@@ -817,25 +788,32 @@ void runTestAnimation()
     r = 0; g = 0; b = 255;
   }
 
-  // Fill using bulk memset into drawing memory (faster than per-pixel setPixel)
-  uint8_t *draw = g_leds.getDrawingMemory();
+  // Build frame data in the playback buffer, then use fillFromBin
+  // This handles both Octo instances and respects color order
+  uint8_t *buf = g_playbackBuffer;
+
   if (g_testOutput == 255) {
-    // All strips: fill entire drawing memory with the computed color
-    uint8_t *dst = draw;
+    // All strips: fill entire buffer with the computed color
     for (uint16_t i = 0; i < totalPixels; i++) {
-      *dst++ = r; *dst++ = g; *dst++ = b;
+      buf[i*3 + 0] = r;
+      buf[i*3 + 1] = g;
+      buf[i*3 + 2] = b;
     }
   } else {
     // Single strip: zero all, then fill only the target strip
-    memset(draw, 0, totalPixels * 3);
+    memset(buf, 0, totalPixels * 3);
     uint8_t s = g_testOutput;
-    uint8_t *dst = draw + s * stripLen * 3;
+    uint8_t *dst = buf + s * stripLen * 3;
     for (uint16_t i = 0; i < stripLen; i++) {
-      *dst++ = r; *dst++ = g; *dst++ = b;
+      dst[i*3 + 0] = r;
+      dst[i*3 + 1] = g;
+      dst[i*3 + 2] = b;
     }
   }
+
+  // Use fillFromBin which handles both Octo instances and color ordering
+  g_leds.fillFromBin(buf, totalPixels * 3);
   g_leds.show();
-  // No delay(16) — animation timing handled by loop cadence
 }
 
 // ========================  REBOOT  ========================================

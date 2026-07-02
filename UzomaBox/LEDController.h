@@ -27,22 +27,25 @@ ColorOrder parseColorOrder(const char *str);
 // Convert a ColorOrder enum to its string representation (e.g. "grb")
 const char *colorOrderStr(ColorOrder order);
 
+// Number of LED strips (dual OctoWS2811 = 16 outputs)
+#define NUM_STRIPS  16
+
 class LEDController {
 public:
   LEDController();
   ~LEDController();
 
-  // Initialise OctoWS2811 with given number of LEDs per strip
+  // Initialise dual OctoWS2811 with given number of LEDs per strip
   void begin(uint16_t ledsPerStrip);
 
-  // Push the current drawing memory to the strips
+  // Push the current drawing memory to the strips (both Octo instances)
   void show();
 
-  // Set a single pixel (strip 0-7, index 0..ledsPerStrip-1, RGB)
+  // Set a single pixel (strip 0-15, index 0..ledsPerStrip-1, RGB)
   // Honors the current color order: r, g, b are reordered before writing.
   void setPixel(uint8_t strip, uint16_t index, uint8_t r, uint8_t g, uint8_t b);
 
-  // Fill the drawing memory from a raw RGB frame buffer (size = ledsPerStrip * 8 * 3)
+  // Fill the drawing memory from a raw RGB frame buffer (size = ledsPerStrip * 16 * 3)
   // Output mask: if outputActive[i] is false, that strip stays black.
   // Honors the current color order.
   // Uses setPixel() per-pixel (slower, legacy).
@@ -61,30 +64,33 @@ public:
   // Zero out all pixels
   void clear();
 
-  // Update the output-active mask
-  void setOutputMask(const bool active[8]);
+  // Update the output-active mask (array of 16 bools)
+  void setOutputMask(const bool active[16]);
 
   // Access drawingMemory pointer (for direct manipulation)
   uint8_t *getDrawingMemory();
   uint16_t getLedsPerStrip() const { return _ledsPerStrip; }
 
-  // Total pixels across all 8 strips
-  uint16_t totalPixels() const { return _ledsPerStrip * 8; }
+  // Total pixels across all 16 strips
+  uint16_t totalPixels() const { return _ledsPerStrip * NUM_STRIPS; }
 
   // ---- Color order ----
   void setColorOrder(ColorOrder order) { _colorOrder = order; }
   ColorOrder getColorOrder() const { return _colorOrder; }
 
 private:
-  OctoWS2811  _leds;
-  uint16_t    _ledsPerStrip;
-  bool        _outputActive[8];
-  ColorOrder  _colorOrder;
-  int        *_displayMemory;   // DMAMEM allocated in begin()
-  int        *_drawingMemory;   // regular RAM
+  // Two OctoWS2811 instances: strips 0-7 on instance #1, strips 8-15 on instance #2
+  OctoWS2811  _leds;      // first 8 outputs (default pins)
+  OctoWS2811  _leds2;     // second 8 outputs (alternate pins)
 
-  // DMA-allocated storage is handled inside OctoWS2811;
-  // we allocate displayMemory and drawingMemory ourselves based on strip count.
+  uint16_t    _ledsPerStrip;
+  bool        _outputActive[NUM_STRIPS];   // 16 strips
+  ColorOrder  _colorOrder;
+  int        *_displayMemory[2];   // pointers to DMAMEM blocks
+  int        *_drawingMemory[2];   // pointers to regular RAM blocks
+
+  // Internal: write a pixel to a specific OctoWS2811 instance
+  void _setPixelInternal(OctoWS2811 &octo, uint16_t globalIdx, uint8_t r, uint8_t g, uint8_t b);
 };
 
 #endif
