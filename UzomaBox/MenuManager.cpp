@@ -640,16 +640,8 @@ void MenuManager::_drawHome()
   _display.setTextSize(1);
   _display.setTextColor(SSD1306_WHITE);
 
-  // Top bar
-  _display.fillRect(0, 0, 128, 9, SSD1306_WHITE);
-  _display.setTextColor(SSD1306_BLACK);
-  _display.setCursor(2, 0);
-  _display.print("UZOMABOX v");
-  _display.print(FW_VERSION);
-  _display.setTextColor(SSD1306_WHITE);
-
   // Mode line
-  _display.setCursor(0, 12);
+  _display.setCursor(0, 0);
   _display.print("Mode: ");
   switch (g_mode) {
     case MODE_ARTNET:   _display.print("ArtNet"); break;
@@ -662,7 +654,7 @@ void MenuManager::_drawHome()
   }
 
   // IP
-  _display.setCursor(0, 22);
+  _display.setCursor(0, 12);
   _display.print("IP: ");
   _display.print(g_config.ip[0]); _display.print(".");
   _display.print(g_config.ip[1]); _display.print(".");
@@ -670,27 +662,19 @@ void MenuManager::_drawHome()
   _display.print(g_config.ip[3]);
 
   // FPS
-  _display.setCursor(0, 32);
+  _display.setCursor(0, 24);
   _display.print("FPS: ");
   _display.print(g_fpsFrames);
 
   // Current file (if playing)
   if (g_playback.isPlaying()) {
-    _display.setCursor(0, 42);
+    _display.setCursor(0, 36);
     _display.print("File: ");
     _display.print(g_playback.currentFilename());
   }
 
-  // Uptime (simplified — show seconds since last activity reset)
-  uint32_t secs = millis() / 1000;
-  _display.setCursor(0, 52);
-  _display.print("Up: ");
-  _display.print(secs / 3600); _display.print("h");
-  _display.print((secs % 3600) / 60); _display.print("m");
-  _display.print(secs % 60); _display.print("s");
-
   // Hint at bottom
-  _display.setCursor(0, 62);
+  _display.setCursor(0, 56);
   _display.print("OK=menu");
 }
 
