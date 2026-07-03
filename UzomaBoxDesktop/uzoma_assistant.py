@@ -857,15 +857,12 @@ class DeviceConfigWindow:
                 pass
         elif k == "mode":
             self.mode_var = tk.StringVar(value=v)
-        elif k == "recording":
-            if v.lower() == "yes":
-                self.rec_status_var.set("Recording...")
+            if v.lower() == "record":
                 if not self._breath_active and hasattr(self, 'rec_frame'):
                     self._breath_active = True
                     self._breath_val = 0.0
                     self._breathe_animate()
             else:
-                self.rec_status_var.set("Idle")
                 if self._breath_active:
                     self._breath_active = False
                     if self._breath_after_id:
@@ -878,6 +875,11 @@ class DeviceConfigWindow:
                         self.rec_frame.configure(background='')
                     except:
                         pass
+        elif k == "recording":
+            if v.lower() == "yes":
+                self.rec_status_var.set("Recording...")
+            else:
+                self.rec_status_var.set("Idle")
         elif k == "record_time":
             try:
                 secs = int(v)
