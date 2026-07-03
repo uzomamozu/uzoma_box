@@ -764,7 +764,7 @@ void printStatus()
     "record_time=%lu\r\n"
     "start_universe=%s\r\n"
     "file_pos=%lu\r\n"
-    "file_total=%lu"
+    "file_total=%lu\r\n"
     "output_count=%d",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" :
