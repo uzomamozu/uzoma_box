@@ -25,39 +25,21 @@ public:
   ~PlaybackController();
 
   // ---- Playback -----------------------------------------------------------
-
-  // Prepare to play back a single .BIN file
   bool playFile(const char *filename);
-
-  // Prepare to play back all .BIN files sequentially
   int playSequence();
 
   // Advance one frame.  Returns true if a frame was displayed.
-  // Returns false at EOF (file automatically advances to next in sequence).
-  // When true, pixel data has been copied into dest (pixelCount * 3 bytes),
+  // When true, pixel data has been copied into dest (pixelCount * 3 bytes).
   // frameTimeUs is filled with frame duration, pixelCount with pixel count.
   bool playNextFrame(uint8_t *dest, uint32_t *frameTimeUs, uint16_t *pixelCount);
 
-  // Stop playback
   void stop();
-
-  // Check if playback is active
   bool isPlaying() const { return _playing; }
 
   // ---- Recording ----------------------------------------------------------
-
-  // Start recording: create a new .BIN file
   bool startRecording();
-
-  // Write one video frame to the .BIN file.
-  // rgbData: RGB byte-triplets for all 16 strips (totalPixels * 3 bytes)
-  // frameTimeUs: frame duration in microseconds (use 0 for live capture)
   bool writeFrame(const uint8_t *rgbData, uint16_t totalPixels, uint32_t frameTimeUs);
-
-  // Stop recording and close the file
   bool stopRecording();
-
-  // Check if recording is active
   bool isRecording() const { return _recording; }
 
   // ---- Recording time (elapsed seconds) ----------------------------------
@@ -66,54 +48,45 @@ public:
   }
 
   // ---- Speed control ------------------------------------------------------
-
-  // Set playback speed multiplier (0.05 = 1/20x, 1.0 = normal, 5.0 = 5x)
   void setSpeed(float mult) { _speedMult = constrain(mult, 0.05f, 5.0f); }
   float getSpeed() const { return _speedMult; }
 
   // ---- Utility ------------------------------------------------------------
-
-  // Get the current playback filename
   const char *currentFilename() const { return _currentFile; }
-
-  // Get total frames played so far in current file
   uint32_t framesPlayed() const { return _framesPlayed; }
-
-  // Reset frame counter
   void resetFrameCount() { _framesPlayed = 0; }
-
-  // File progress (bytes)
   uint32_t filePosition() const { return sdFilePosition(); }
   uint32_t fileSize() const { return sdFileSize(); }
 
 private:
-  // Open the next file in the sequence
   bool openNextFile();
-
-  // Flush any pending recording buffer to SD
   bool _flushRecBuffer();
 
   // Internal state
   bool          _playing;
   bool          _recording;
-  char          _currentFile[32];       // current playback filename
-  char          _playlist[64][16];      // sequence of .BIN files
+  char          _currentFile[32];
+  char          _playlist[64][16];
   int           _playlistCount;
   int           _playlistIndex;
   uint32_t      _framesPlayed;
-  uint32_t      _lastFrameTime;         // micros() at last frame
-  float         _speedMult;             // playback speed multiplier (0.05-5.0)
-  bool          _framePending;          // true when we've read a header but timing isn't ready
-  uint16_t      _pendingPixCount;
-  uint32_t      _pendingFrameTime;
-  uint32_t      _recordStartMs;         // millis() when recording started
+  uint32_t      _lastFrameTime;         // micros() at last shown frame
+  float         _speedMult;
+
+  // Pending frame buffer — stores one full frame (header + pixels) when
+  // timing check fails, so we don't need to seek back in the SD file.
+  uint8_t       _pendingBuf[MAX_FRAME_SIZE];
+  bool          _framePending;          // true when _pendingBuf has data
+  uint16_t      _pendingPixCount;       // pixel count of pending frame
+  uint32_t      _pendingFrameTime;      // frameTimeUs of pending frame
+
+  uint32_t      _recordStartMs;
 
   // Recording double-buffer state
-  uint8_t       _recBufIdx;             // current write buffer index (0 or 1)
-  bool          _recBufDirty[REC_BUFFER_COUNT];  // true when buffer has pending data
-  uint16_t      _recBufLen[REC_BUFFER_COUNT];    // bytes pending per buffer
+  uint8_t       _recBufIdx;
+  bool          _recBufDirty[REC_BUFFER_COUNT];
+  uint16_t      _recBufLen[REC_BUFFER_COUNT];
 
-  // DMAMEM recording buffers (one for active capture, one for SD flush)
   DMAMEM static uint8_t s_recBuffer[REC_BUFFER_COUNT][MAX_FRAME_SIZE];
 };
 
