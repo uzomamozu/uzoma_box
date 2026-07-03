@@ -226,7 +226,10 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
 
         _receiving = true;
         _lastPacketTime = millis();
-        return;
+        // Continue to next strip — when all strips share the same
+        // start universe (e.g. all set to 0), this single packet
+        // provides data for every strip, not just the first match.
+        break;
       }
     }
   }
