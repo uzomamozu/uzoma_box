@@ -92,6 +92,12 @@ uint32_t           g_fpsLastPrint = 0;
 // Shared between playback and test mode to avoid stack overflow
 DMAMEM static uint8_t g_playbackBuffer[512 * 16 * 3];
 
+// Frame dedup guard: micros() of last recorded frame write.
+// ArtNet double-fire (timeout + _allUpdated) can write the same frame twice.
+// This guard skips writes that arrive within 15ms of the previous one,
+// preventing inflated files that cause playback speed issues.
+static uint32_t g_lastRecordUs = 0;
+
 // ========================  FORWARD DECLARATIONS  ==========================
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels);
@@ -336,10 +342,28 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 
   // Write frame if recording is active
   if (g_recordingActive) {
-    uint32_t frameTimeUs = 1000000 / g_config.recordFps;
-    g_playback.writeFrame(rgbData, totalPixels, frameTimeUs);
+    // Dedup: skip frame if it arrives within 15ms of the previous one.
+    // ArtNet's double-fire (timeout + _allUpdated) can trigger the
+    // callback twice for the same logical frame.
+    uint32_t nowUs = micros();
+    uint32_t sinceLast = (uint32_t)(nowUs - g_lastRecordUs);
+    bool dedup = (g_lastRecordUs != 0 && sinceLast < 15000);
+    if (!dedup) {
+      // Use real inter-frame timing for the stored frame.
+      // First frame uses the configured fps as default.
+      uint32_t frameTimeUs;
+      if (g_lastRecordUs == 0) {
+        frameTimeUs = 1000000 / g_config.recordFps;
+      } else {
+        frameTimeUs = sinceLast;
+        if (frameTimeUs < 1000) frameTimeUs = 1000;
+        if (frameTimeUs > 2000000) frameTimeUs = 2000000;
+      }
+      g_lastRecordUs = nowUs;
+      g_playback.writeFrame(rgbData, totalPixels, frameTimeUs);
+    }
 
-    // Stop triggers
+    // Stop triggers (runs on every callback, even deduped)
     bool shouldStop = false;
     if (g_recStopMode == 0) {
       // Immediate — only stop via REC:STOP command
