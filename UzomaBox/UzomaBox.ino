@@ -19,6 +19,28 @@
 #include "UdpDiscovery.h"
 #include "MenuManager.h"
 
+// ========================  WATCHDOG  =========================================
+// Teensy 4.1 (IMXRT1062) hardware watchdog — no external library needed.
+// 8-second timeout: generous enough for SD init + Ethernet/ArtNet startup,
+// but short enough to recover from stuck SD/Ethernet/loop conditions.
+
+static void watchdog_enable(void)
+{
+  // Disable WDOG1 before configuring
+  WDOG1_CS = 0;
+  // Timeout in ms (8000 = 8 seconds)
+  WDOG1_TOVAL = 8000;
+  // Enable, allow update, use internal low-frequency clock
+  WDOG1_CS = WDOG_CS_EN | WDOG_CS_UPDATE | WDOG_CS_CLK;
+}
+
+static inline void watchdog_feed(void)
+{
+  // Feed sequence: write 0xA602 then 0xB480 to the CNT register
+  WDOG1_CNT = 0xA602;
+  WDOG1_CNT = 0xB480;
+}
+
 // ========================  GLOBAL OBJECTS  ================================
 
 AppConfig          g_config;
@@ -82,6 +104,9 @@ void setMode(OperatingMode newMode);
 
 void setup()
 {
+  // Enable hardware watchdog early (8 second timeout)
+  watchdog_enable();
+
   Serial.begin(115200);
   delay(100);
   Serial.println("\n=== UzomaBox (16 outputs) ===");
@@ -89,7 +114,10 @@ void setup()
   // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) ------------
   if (!sdInit()) {
     Serial.println("FATAL: No SD card found");
-    while (1) { delay(1000); }
+    while (1) {
+      watchdog_feed();
+      delay(1000);
+    }
   }
   Serial.println("SD card OK");
 
@@ -161,6 +189,9 @@ void setup()
 
 void loop()
 {
+  // Feed the watchdog — if any operation hangs, board auto-reboots after 8s
+  watchdog_feed();
+
   char cmdBuffer[CMD_BUFFER_SIZE];
   int  cmd = g_tcp.poll(cmdBuffer, sizeof(cmdBuffer));
 
