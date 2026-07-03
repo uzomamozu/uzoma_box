@@ -42,7 +42,7 @@ void sdCardSkip(unsigned int len)
 }
 
 // ---- File open -------------------------------------------------------------
-bool sdFileOpen(const char *filename, uint8_t mode)
+bool sdFileOpen(const char *filename, int mode)
 {
   if (g_opened) sdFileClose();
   g_file = SD.open(filename, mode);

@@ -17,9 +17,8 @@ bool sdCardRead(void *ptr, unsigned int len);
 void sdCardSkip(unsigned int len);
 
 // ---- File open / close -----------------------------------------------------
-//   mode: FILE_READ or FILE_WRITE / FILE_WRITE_BEGIN
-//   FILE_WRITE_BEGIN = O_WRITE | O_CREAT (writes from start)
-bool sdFileOpen(const char *filename, uint8_t mode);
+//   mode: FILE_READ (0x01) or O_WRITE|O_CREAT (0x0201) / O_WRITE|O_CREAT|O_TRUNC (0x0601)
+bool sdFileOpen(const char *filename, int mode);
 void sdFileClose(void);
 
 // ---- Line reading (for CONFIG.TXT) ----------------------------------------

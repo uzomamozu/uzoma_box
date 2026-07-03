@@ -100,6 +100,7 @@ void setup()
     case MODE_ARTNET:   Serial.println("ArtNet");  break;
     case MODE_PLAYBACK: Serial.println("Playback"); break;
     case MODE_RECORD:   Serial.println("Record");   break;
+    case MODE_TEST:     Serial.println("Test");     break;
   }
   Serial.print("IP: ");   Serial.println(g_config.ip);
   Serial.print("MAC: ");  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",

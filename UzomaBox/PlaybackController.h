@@ -103,8 +103,8 @@ private:
   int           _playlistIndex;
   uint32_t      _framesPlayed;
   uint32_t      _lastFrameTime;         // micros() at last frame
-  uint32_t      _recordStartMs;         // millis() when recording started
   float         _speedMult;             // playback speed multiplier (0.05-5.0)
+  uint32_t      _recordStartMs;         // millis() when recording started
 
   // Recording double-buffer state
   uint8_t       _recBufIdx;             // current write buffer index (0 or 1)

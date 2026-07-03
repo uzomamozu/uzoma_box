@@ -12,6 +12,7 @@
 // Pin assignments for the two OctoWS2811 instances
 // Instance #1: strips 0-7  (default OctoWS2811 pins)
 // Instance #2: strips 8-15 (alternate pins)
+// Teensy 4.x OctoWS2811 accepts arbitrary pin lists via the constructor.
 // ---------------------------------------------------------------------------
 const uint8_t octoPins1[] = {2, 14, 7, 8, 6, 20, 21, 5};
 const uint8_t octoPins2[] = {28, 29, 24, 25, 10, 11, 12, 4};
@@ -75,8 +76,8 @@ const char *colorOrderStr(ColorOrder order)
 
 // ---------------------------------------------------------------------------
 LEDController::LEDController()
-  : _leds(MAX_LEDS_PER_STRIP, s_displayMemory1, s_drawingMemory1, WS2811_800kHz)
-  , _leds2(MAX_LEDS_PER_STRIP, s_displayMemory2, s_drawingMemory2, WS2811_800kHz | WS2811_ALT_PINS)
+  : _leds(MAX_LEDS_PER_STRIP, s_displayMemory1, s_drawingMemory1, WS2811_800kHz, 8, octoPins1)
+  , _leds2(MAX_LEDS_PER_STRIP, s_displayMemory2, s_drawingMemory2, WS2811_800kHz, 8, octoPins2)
   , _ledsPerStrip(0)
   , _colorOrder(ORDER_RGB)
 {
@@ -186,7 +187,7 @@ void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels
 
   // Each Octo handles 8 strips worth of data
   for (int octoIdx = 0; octoIdx < 2; octoIdx++) {
-    OctoWS2811 &octo = (octoIdx == 0) ? _leds : _leds2;
+    (void)octoIdx;  // octoIdx used to select drawing memory array
     uint8_t *draw = (uint8_t *)_drawingMemory[octoIdx];
     int stripBase = octoIdx * 8;  // 0 or 8
 

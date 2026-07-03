@@ -14,11 +14,11 @@ ArtNetHandler::ArtNetHandler()
   , _totalPixels(512 * 16)
   , _receiving(false)
   , _lastPacketTime(0)
+  , _universesPerStrip(3)
   , _frameCb(nullptr)
   , _allUpdated(false)
   , _frameStarted(false)
   , _frameStartTime(0)
-  , _universesPerStrip(3)
 {
   memset(s_frameBuffer, 0, _totalPixels * 3);
   resetFrameState();
