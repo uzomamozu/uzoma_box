@@ -196,6 +196,9 @@ class DeviceConfigWindow:
         self._progress_active = False
         self._num_outputs = 8  # default until we query the firmware
         self._start_univ_dirty = []
+        self._breath_active = False
+        self._breath_val = 0.0
+        self._breath_after_id = None
 
         self._tcp = TcpClientPersistent(self.ip, timeout=3.0)
         try:
@@ -452,6 +455,7 @@ class DeviceConfigWindow:
         # Recording controls
         rec_frame = ttk.LabelFrame(frame, text="Recording", padding=6)
         rec_frame.pack(fill=tk.X, pady=(0,8))
+        self.rec_frame = rec_frame
 
         # Row 0: FPS and buttons
         row0 = ttk.Frame(rec_frame)
@@ -855,8 +859,24 @@ class DeviceConfigWindow:
         elif k == "recording":
             if v.lower() == "yes":
                 self.rec_status_var.set("Recording...")
+                if not self._breath_active and hasattr(self, 'rec_frame'):
+                    self._breath_active = True
+                    self._breath_val = 0.0
+                    self._breathe_animate()
             else:
                 self.rec_status_var.set("Idle")
+                if self._breath_active:
+                    self._breath_active = False
+                    if self._breath_after_id:
+                        try:
+                            self.win.after_cancel(self._breath_after_id)
+                        except:
+                            pass
+                        self._breath_after_id = None
+                    try:
+                        self.rec_frame.configure(background='')
+                    except:
+                        pass
         elif k == "record_time":
             try:
                 secs = int(v)
@@ -935,10 +955,33 @@ class DeviceConfigWindow:
         self._conn_indicator.delete("all")
         self._conn_indicator.create_oval(1, 1, 13, 13, fill="red", outline="black")
 
+    def _breathe_animate(self):
+        """Animate the recording frame background with a breathing gray pulse."""
+        if not self._breath_active or not hasattr(self, 'rec_frame'):
+            return
+        import math
+        self._breath_val += 0.08
+        # Sine from 0 to π, mapping to gray range 100-155
+        phase = (math.sin(self._breath_val) + 1.0) / 2.0  # 0..1
+        gray = int(100 + phase * 55)
+        hex_color = '#%02x%02x%02x' % (gray, gray, gray)
+        try:
+            self.rec_frame.configure(style='')
+            self.rec_frame.master.configure(style='')
+            self.rec_frame.configure(background=hex_color)
+        except tk.TclError:
+            pass
+        self._breath_after_id = self.win.after(50, self._breathe_animate)
+
     def on_close(self):
         if self.after_id:
             try:
                 self.win.after_cancel(self.after_id)
+            except:
+                pass
+        if self._breath_after_id:
+            try:
+                self.win.after_cancel(self._breath_after_id)
             except:
                 pass
         self._tcp.close()
