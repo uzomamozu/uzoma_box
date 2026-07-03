@@ -324,7 +324,6 @@ class DeviceConfigWindow:
             self.start_univ_old.append(str(i * 3))  # initial valid value for revert
             sc = ttk.Entry(row_frame, textvariable=sv, width=5)
             sc.pack(side=tk.LEFT, padx=(0, 4))
-            sc.bind("<FocusOut>", lambda e, idx=i: self._validate_start_univ(idx))
             sc.bind("<Return>", lambda e, idx=i: self._focus_next_univ(idx))
             sc.bind("<Down>", lambda e, idx=i: self._focus_next_univ(idx))
             sc.bind("<Up>", lambda e, idx=i: self._focus_prev_univ(idx))
