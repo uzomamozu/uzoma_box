@@ -328,6 +328,8 @@ class DeviceConfigWindow:
             sc.bind("<Return>", lambda e, idx=i: self._focus_next_univ(idx))
             sc.bind("<Down>", lambda e, idx=i: self._focus_next_univ(idx))
             sc.bind("<Up>", lambda e, idx=i: self._focus_prev_univ(idx))
+            sc.bind("<Tab>", lambda e, idx=i: self._focus_next_univ(idx))
+            sc.bind("<Shift-Tab>", lambda e, idx=i: self._focus_prev_univ(idx))
             self.start_univ_entries.append(sc)
             ttk.Label(row_frame, text="1", width=8, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
@@ -379,14 +381,20 @@ class DeviceConfigWindow:
         self._validate_start_univ(idx)
         nxt = idx + 1
         if nxt < len(self.start_univ_entries):
-            self.start_univ_entries[nxt].focus_set()
+            e = self.start_univ_entries[nxt]
+            e.focus_set()
+            e.selection_range(0, 'end')
+        return 'break'
 
     def _focus_prev_univ(self, idx):
         """Validate current Entry, then focus the previous one up."""
         self._validate_start_univ(idx)
         prv = idx - 1
         if prv >= 0:
-            self.start_univ_entries[prv].focus_set()
+            e = self.start_univ_entries[prv]
+            e.focus_set()
+            e.selection_range(0, 'end')
+        return 'break'
 
     def _update_univ_range(self, idx):
         led_w = self.led_width_var.get()
