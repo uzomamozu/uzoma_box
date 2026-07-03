@@ -246,23 +246,21 @@ void loop()
         uint32_t frameTimeUs = 0;
         uint16_t pixelCount  = 0;
 
-        if (g_playback.playNextFrame(&frameTimeUs, &pixelCount)) {
-          uint16_t dataSize = pixelCount * 3;
-          uint16_t maxSize  = g_leds.totalPixels() * 3;  // _ledsPerStrip * 16 * 3
+        if (g_playback.playNextFrame(g_playbackBuffer, &frameTimeUs, &pixelCount)) {
+          // playNextFrame read pixel data directly into g_playbackBuffer
+          uint16_t dataBytes = pixelCount * 3;
+          uint16_t maxBytes  = g_leds.totalPixels() * 3;
 
-          if (dataSize > maxSize) {
-            // File has more pixels than we can display
-            if (sdCardRead(g_playbackBuffer, maxSize)) {
-              g_leds.fillFromBin(g_playbackBuffer, maxSize);
-              g_leds.show();
-            }
-            sdCardSkip(dataSize - maxSize);  // keep SD aligned
+          if (dataBytes > maxBytes) {
+            // File has more pixels — fill what fits, skip rest
+            g_leds.fillFromBin(g_playbackBuffer, maxBytes);
+            // Need to skip excess data not consumed by playNextFrame.
+            // Since playNextFrame reads exactly dataBytes pixels,
+            // and we only use maxBytes of them, we skip the rest.
+            g_leds.show();
           } else {
-            // File has fewer (or equal) pixels
-            if (sdCardRead(g_playbackBuffer, dataSize)) {
-              g_leds.fillFromBin(g_playbackBuffer, dataSize);
-              g_leds.show();
-            }
+            g_leds.fillFromBin(g_playbackBuffer, dataBytes);
+            g_leds.show();
           }
         }
       } else {

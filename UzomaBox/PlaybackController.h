@@ -34,10 +34,9 @@ public:
 
   // Advance one frame.  Returns true if a frame was displayed.
   // Returns false at EOF (file automatically advances to next in sequence).
-  // On success, frameTimeUs is filled with frame duration, pixelCount with
-  // the number of pixels in this frame (caller must read pixelCount*3 bytes
-  // via sdCardRead() immediately after).
-  bool playNextFrame(uint32_t *frameTimeUs = nullptr, uint16_t *pixelCount = nullptr);
+  // When true, pixel data has been copied into dest (pixelCount * 3 bytes),
+  // frameTimeUs is filled with frame duration, pixelCount with pixel count.
+  bool playNextFrame(uint8_t *dest, uint32_t *frameTimeUs, uint16_t *pixelCount);
 
   // Stop playback
   void stop();
@@ -104,6 +103,9 @@ private:
   uint32_t      _framesPlayed;
   uint32_t      _lastFrameTime;         // micros() at last frame
   float         _speedMult;             // playback speed multiplier (0.05-5.0)
+  bool          _framePending;          // true when we've read a header but timing isn't ready
+  uint16_t      _pendingPixCount;
+  uint32_t      _pendingFrameTime;
   uint32_t      _recordStartMs;         // millis() when recording started
 
   // Recording double-buffer state
