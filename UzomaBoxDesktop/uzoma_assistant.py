@@ -453,7 +453,8 @@ class DeviceConfigWindow:
         self.record_mode_btn.pack(side=tk.LEFT)
 
         # Recording controls
-        rec_frame = ttk.LabelFrame(frame, text="Recording", padding=6)
+        rec_frame = tk.LabelFrame(frame, text="Recording", padx=6, pady=6,
+                                  font=("TkDefaultFont", 9, "bold"))
         rec_frame.pack(fill=tk.X, pady=(0,8))
         self.rec_frame = rec_frame
 
@@ -966,8 +967,6 @@ class DeviceConfigWindow:
         gray = int(100 + phase * 55)
         hex_color = '#%02x%02x%02x' % (gray, gray, gray)
         try:
-            self.rec_frame.configure(style='')
-            self.rec_frame.master.configure(style='')
             self.rec_frame.configure(background=hex_color)
         except tk.TclError:
             pass
