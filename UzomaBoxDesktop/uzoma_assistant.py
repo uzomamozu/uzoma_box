@@ -309,6 +309,7 @@ class DeviceConfigWindow:
         self.output_active_vars = []
         self.start_univ_vars = []
         self.start_univ_old = []  # last valid values for revert on invalid input
+        self.start_univ_entries = []  # Entry widgets for focus navigation
         self.end_univ_vars = []
         self.subnet_univ_vars = []
         for i in range(self._num_outputs):
@@ -324,7 +325,10 @@ class DeviceConfigWindow:
             sc = ttk.Entry(row_frame, textvariable=sv, width=5)
             sc.pack(side=tk.LEFT, padx=(0, 4))
             sc.bind("<FocusOut>", lambda e, idx=i: self._validate_start_univ(idx))
-            sc.bind("<Return>", lambda e, idx=i: self._validate_start_univ(idx))
+            sc.bind("<Return>", lambda e, idx=i: self._focus_next_univ(idx))
+            sc.bind("<Down>", lambda e, idx=i: self._focus_next_univ(idx))
+            sc.bind("<Up>", lambda e, idx=i: self._focus_prev_univ(idx))
+            self.start_univ_entries.append(sc)
             ttk.Label(row_frame, text="1", width=8, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
             euv = tk.StringVar(value="--")
@@ -369,6 +373,20 @@ class DeviceConfigWindow:
             pass
         # Invalid — revert to last valid value
         self.start_univ_vars[idx].set(self.start_univ_old[idx])
+
+    def _focus_next_univ(self, idx):
+        """Validate current Entry, then focus the next one down."""
+        self._validate_start_univ(idx)
+        nxt = idx + 1
+        if nxt < len(self.start_univ_entries):
+            self.start_univ_entries[nxt].focus_set()
+
+    def _focus_prev_univ(self, idx):
+        """Validate current Entry, then focus the previous one up."""
+        self._validate_start_univ(idx)
+        prv = idx - 1
+        if prv >= 0:
+            self.start_univ_entries[prv].focus_set()
 
     def _update_univ_range(self, idx):
         led_w = self.led_width_var.get()
