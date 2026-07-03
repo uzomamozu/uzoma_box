@@ -27,18 +27,21 @@ ColorOrder parseColorOrder(const char *str);
 // Convert a ColorOrder enum to its string representation (e.g. "grb")
 const char *colorOrderStr(ColorOrder order);
 
-// Number of LED strips (dual OctoWS2811 = 16 outputs)
+// Number of LED strips (single OctoWS2811 with 16 pins = 16 outputs)
 #define NUM_STRIPS  16
+
+// All 16 pins in order: outputs 1-8 (first Octo half), outputs 9-16 (second Octo half)
+extern const uint8_t ledPins[16];
 
 class LEDController {
 public:
   LEDController();
   ~LEDController();
 
-  // Initialise dual OctoWS2811 with given number of LEDs per strip
+  // Initialise OctoWS2811 with given number of LEDs per strip
   void begin(uint16_t ledsPerStrip);
 
-  // Push the current drawing memory to the strips (both Octo instances)
+  // Push the current drawing memory to the strips
   void show();
 
   // Set a single pixel (strip 0-15, index 0..ledsPerStrip-1, RGB)
@@ -48,7 +51,6 @@ public:
   // Fill the drawing memory from a raw RGB frame buffer (size = ledsPerStrip * 16 * 3)
   // Output mask: if outputActive[i] is false, that strip stays black.
   // Honors the current color order.
-  // Uses setPixel() per-pixel (slower, legacy).
   void fillFrame(const uint8_t *rgbData, uint16_t totalPixels);
 
   // Optimised fill: writes directly to drawingMemory as ints.
@@ -79,18 +81,12 @@ public:
   ColorOrder getColorOrder() const { return _colorOrder; }
 
 private:
-  // Two OctoWS2811 instances: strips 0-7 on instance #1, strips 8-15 on instance #2
-  OctoWS2811  _leds;      // first 8 outputs (default pins)
-  OctoWS2811  _leds2;     // second 8 outputs (alternate pins)
+  // Single OctoWS2811 instance with 16 outputs
+  OctoWS2811  _leds;
 
   uint16_t    _ledsPerStrip;
   bool        _outputActive[NUM_STRIPS];   // 16 strips
   ColorOrder  _colorOrder;
-  int        *_displayMemory[2];   // pointers to DMAMEM blocks
-  int        *_drawingMemory[2];   // pointers to regular RAM blocks
-
-  // Internal: write a pixel to a specific OctoWS2811 instance
-  void _setPixelInternal(OctoWS2811 &octo, uint16_t globalIdx, uint8_t r, uint8_t g, uint8_t b);
 };
 
 #endif
