@@ -308,6 +308,7 @@ class DeviceConfigWindow:
         ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 4))
         self.output_active_vars = []
         self.start_univ_vars = []
+        self.start_univ_old = []  # last valid values for revert on invalid input
         self.end_univ_vars = []
         self.subnet_univ_vars = []
         for i in range(self._num_outputs):
@@ -319,10 +320,11 @@ class DeviceConfigWindow:
             ttk.Checkbutton(row_frame, variable=av, width=4).pack(side=tk.LEFT, padx=(0, 4))
             sv = tk.StringVar(value=str(i * 3))
             self.start_univ_vars.append(sv)
-            sc = ttk.Combobox(row_frame, textvariable=sv, values=[str(x) for x in range(0, 256)],
-                              width=8, state="readonly")
+            self.start_univ_old.append(str(i * 3))  # initial valid value for revert
+            sc = ttk.Entry(row_frame, textvariable=sv, width=5)
             sc.pack(side=tk.LEFT, padx=(0, 4))
-            sc.bind("<<ComboboxSelected>>", lambda e, idx=i: self._on_start_univ_changed(idx))
+            sc.bind("<FocusOut>", lambda e, idx=i: self._validate_start_univ(idx))
+            sc.bind("<Return>", lambda e, idx=i: self._validate_start_univ(idx))
             ttk.Label(row_frame, text="1", width=8, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
             euv = tk.StringVar(value="--")
@@ -352,6 +354,21 @@ class DeviceConfigWindow:
     def _on_start_univ_changed(self, idx):
         self._start_univ_dirty[idx] = True
         self._update_univ_range(idx)
+
+    def _validate_start_univ(self, idx):
+        """Validate start universe on focus-out / Enter. Revert to old value if invalid."""
+        val = self.start_univ_vars[idx].get().strip()
+        try:
+            n = int(val)
+            if 0 <= n <= 255:
+                # Valid — mark dirty, update old value, refresh derived fields
+                self.start_univ_old[idx] = val
+                self._on_start_univ_changed(idx)
+                return
+        except (ValueError, TypeError):
+            pass
+        # Invalid — revert to last valid value
+        self.start_univ_vars[idx].set(self.start_univ_old[idx])
 
     def _update_univ_range(self, idx):
         led_w = self.led_width_var.get()
