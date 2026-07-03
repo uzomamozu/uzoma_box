@@ -20,25 +20,26 @@
 #include "MenuManager.h"
 
 // ========================  WATCHDOG  =========================================
-// Teensy 4.1 (IMXRT1062) hardware watchdog — no external library needed.
-// 8-second timeout: generous enough for SD init + Ethernet/ArtNet startup,
-// but short enough to recover from stuck SD/Ethernet/loop conditions.
+// Teensy 4.1 (IMXRT1062) hardware watchdog via WDOG1.
+// Uses the internal low-frequency oscillator (~32 kHz) with 256 prescaler.
+// WT=255 → timeout ≈ 255 / (32768/256) ≈ 2.0 seconds.
+// Called every loop() iteration; any stall >2s triggers a hardware reset.
 
 static void watchdog_enable(void)
 {
-  // Disable WDOG1 before configuring
-  WDOG1_CS = 0;
-  // Timeout in ms (8000 = 8 seconds)
-  WDOG1_TOVAL = 8000;
-  // Enable, allow update, use internal low-frequency clock
-  WDOG1_CS = WDOG_CS_EN | WDOG_CS_UPDATE | WDOG_CS_CLK;
+  // Feed to unlock the configuration register
+  WDOG1_WSR = 0x5555;
+  WDOG1_WSR = 0xAAAA;
+  // WCR: WDE=1 (enable), SRS=1 (assert reset), WDA=1 (allow updates),
+  //      WT=255 (max timeout ~2s at 32kHz/256 prescaler)
+  WDOG1_WCR = (1 << 0) | (1 << 4) | (1 << 5) | (255 << 8);
 }
 
 static inline void watchdog_feed(void)
 {
-  // Feed sequence: write 0xA602 then 0xB480 to the CNT register
-  WDOG1_CNT = 0xA602;
-  WDOG1_CNT = 0xB480;
+  // Refresh sequence: write 0x5555 then 0xAAAA to the service register
+  WDOG1_WSR = 0x5555;
+  WDOG1_WSR = 0xAAAA;
 }
 
 // ========================  GLOBAL OBJECTS  ================================
