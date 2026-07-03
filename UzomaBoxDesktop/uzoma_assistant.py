@@ -800,6 +800,7 @@ class DeviceConfigWindow:
                 if new_count != self._num_outputs:
                     self._num_outputs = new_count
                     self.outputs_var.set(str(self._num_outputs))
+                    self.test_output_combo['values'] = [str(i+1) for i in range(new_count)]
             except (ValueError, IndexError):
                 pass
         elif k == "mode":
