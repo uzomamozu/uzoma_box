@@ -266,7 +266,7 @@ class DeviceConfigWindow:
         ttk.Label(frame, text="IP Address:").grid(row=1, column=0, sticky=tk.W, padx=(0,8), pady=4)
         self.ip_var = tk.StringVar(value=self.ip)
         ttk.Entry(frame, textvariable=self.ip_var, width=30).grid(row=1, column=1, sticky=tk.W, pady=4)
-        ttk.Button(frame, text="Apply & Reboot", command=self._save_ip).grid(row=1, column=2, padx=(8,0), pady=4)
+        ttk.Button(frame, text="OK & Reboot", command=self._save_ip).grid(row=1, column=2, padx=(8,0), pady=4)
         ttk.Label(frame, text="MAC Address:").grid(row=2, column=0, sticky=tk.W, padx=(0,8), pady=4)
         self.mac_var = tk.StringVar(value="--")
         ttk.Label(frame, textvariable=self.mac_var, width=30, relief=tk.SUNKEN, anchor=tk.W).grid(
@@ -343,7 +343,7 @@ class DeviceConfigWindow:
                       font=("Consolas", 9)).pack(side=tk.LEFT)
         self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
         self._update_all_univ_ranges()
-        ttk.Button(frame, text="Apply LED Settings (color live, rest reboots)",
+        ttk.Button(frame, text="OK & Reboot (color live, rest reboots)",
                    command=self._save_led).pack(pady=12)
 
     def _compute_univ_range(self, led_width, start_univ):
@@ -468,7 +468,7 @@ class DeviceConfigWindow:
         ttk.Label(row0, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(4,0))
         self.rec_timer_var = tk.StringVar(value="")
         ttk.Label(row0, textvariable=self.rec_timer_var, width=10).pack(side=tk.LEFT)
-        ttk.Button(row0, text="Apply FPS (reboot)", command=self._save_record_fps).pack(side=tk.RIGHT)
+        ttk.Button(row0, text="OK & Reboot", command=self._save_record_fps).pack(side=tk.RIGHT)
 
         # Row 1: Start trigger
         row1 = ttk.Frame(rec_frame)
