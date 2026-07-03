@@ -329,6 +329,7 @@ class DeviceConfigWindow:
             sc.bind("<Up>", lambda e, idx=i: self._focus_prev_univ(idx))
             sc.bind("<Tab>", lambda e, idx=i: self._focus_next_univ(idx))
             sc.bind("<Shift-Tab>", lambda e, idx=i: self._focus_prev_univ(idx))
+            sc.bind("<FocusIn>", lambda e, idx=i: self._mark_univ_dirty(idx))
             self.start_univ_entries.append(sc)
             ttk.Label(row_frame, text="1", width=8, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 4))
@@ -359,6 +360,10 @@ class DeviceConfigWindow:
     def _on_start_univ_changed(self, idx):
         self._start_univ_dirty[idx] = True
         self._update_univ_range(idx)
+
+    def _mark_univ_dirty(self, idx):
+        """Mark row dirty when focused to prevent status poll from overwriting."""
+        self._start_univ_dirty[idx] = True
 
     def _validate_start_univ(self, idx):
         """Validate start universe on focus-out / Enter. Revert to old value if invalid."""
