@@ -196,6 +196,7 @@ class DeviceConfigWindow:
         self._progress_active = False
         self._num_outputs = 8  # default until we query the firmware
         self._start_univ_dirty = []
+        self._color_order_dirty = False
         self._breath_active = False
         self._breath_val = 0.0
         self._breath_after_id = None
@@ -345,8 +346,9 @@ class DeviceConfigWindow:
             ttk.Label(row_frame, textvariable=suv, width=10, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT)
         self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
+        self.color_order_var.trace_add("write", lambda *a: self._on_color_order_changed())
         self._update_all_univ_ranges()
-        ttk.Button(frame, text="OK & Reboot (color live, rest reboots)",
+        ttk.Button(frame, text="OK & Reboot",
                    command=self._save_led).pack(pady=12)
 
     def _compute_univ_range(self, led_width, start_univ):
@@ -418,6 +420,10 @@ class DeviceConfigWindow:
             self.subnet_univ_vars[idx].set("%d:%d" % (subnet, univ))
         except (ValueError, TypeError):
             self.subnet_univ_vars[idx].set("--")
+
+    def _on_color_order_changed(self):
+        """Mark color order as dirty so status poll doesn't overwrite it."""
+        self._color_order_dirty = True
 
     def _update_all_univ_ranges(self):
         count = min(self._num_outputs, len(self.start_univ_vars))
@@ -685,12 +691,16 @@ class DeviceConfigWindow:
         led_w = self.led_width_var.get().strip()
         univ = ",".join(v.get() for v in self.start_univ_vars)
         outputs = ",".join("1" if v.get() else "0" for v in self.output_active_vars)
+        # Send non-reboot commands first
         self._cmd_send("CONFIG:color_order=%s" % color)
-        time.sleep(0.1)
+        time.sleep(0.05)
+        # Send output_active before reboot-causing commands
+        self._cmd_send("CONFIG:output_active=%s" % outputs)
+        time.sleep(0.05)
+        # Reboot-causing commands (whichever is last triggers the reboot)
         self._cmd_send("CONFIG:start_universe=%s" % univ)
         time.sleep(0.05)
         self._cmd_send("CONFIG:led_width=%s" % led_w)
-        self._cmd_send("CONFIG:output_active=%s" % outputs)
         self._start_univ_dirty = [False] * self._num_outputs
         self.log("LED settings updated on %s (rebooting)" % self.ip)
         self.win.destroy()
@@ -838,7 +848,8 @@ class DeviceConfigWindow:
         if k == "mac":
             self.mac_var.set(v)
         elif k == "color_order":
-            self.color_order_var.set(v)
+            if not self._color_order_dirty:
+                self.color_order_var.set(v)
         elif k == "led_width":
             self.led_width_var.set(v)
         elif k == "start_universe":
@@ -848,6 +859,11 @@ class DeviceConfigWindow:
                 if i < max_i and not self._start_univ_dirty[i]:
                     self.start_univ_vars[i].set(p.strip())
             self._update_all_univ_ranges()
+        elif k == "output_active":
+            parts = v.split(",")
+            for i, p in enumerate(parts):
+                if i < len(self.output_active_vars) and not self._start_univ_dirty[i]:
+                    self.output_active_vars[i].set(p.strip() == "1")
         elif k == "record_fps":
             self.record_fps_var.set(v)
         elif k == "output_count":

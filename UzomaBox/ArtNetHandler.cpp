@@ -20,7 +20,10 @@ ArtNetHandler::ArtNetHandler()
   , _frameReady(false)
   , _frameStarted(false)
   , _frameStartTime(0)
+  , _syncReceived(false)
+  , _waitingForSync(false)
 {
+  for (int i = 0; i < 16; i++) _outputActive[i] = true;
   memset(s_frameBuffer, 0, _totalPixels * 3);
   resetFrameState();
 }
@@ -91,9 +94,11 @@ void ArtNetHandler::resetFrameState()
       _universeSubReceived[i][s] = false;
     }
   }
-  _allUpdated   = false;
-  _frameStarted = false;
+  _allUpdated     = false;
+  _frameStarted   = false;
   _frameStartTime = 0;
+  _syncReceived   = false;
+  _waitingForSync = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,11 +144,26 @@ int ArtNetHandler::poll()
     flushFrame();
   }
 
+  // ---- Sync received while waiting for it ----
+  if (_waitingForSync && _syncReceived) {
+    _waitingForSync = false;
+    _syncReceived = false;
+    flushFrame();
+  }
+
   // ---- Full frame ready ----
   if (_allUpdated) {
-    _allUpdated = false;
-    _frameReady = true;
-    resetFrameState();
+    // If sync has already arrived, go ahead immediately
+    if (_syncReceived) {
+      _allUpdated = false;
+      _syncReceived = false;
+      flushFrame();
+    } else {
+      // Frame complete but no sync yet — wait briefly for Sync
+      _waitingForSync = true;
+      _allUpdated = false;
+      // If sync never arrives, timeout below will flush this frame
+    }
   }
 
   return parsed;
@@ -168,6 +188,12 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   // ---- Handle ArtPoll (0x2000) ----
   if (opCode == ARTNET_OP_POLL) {
     sendArtPollReply();
+    return;
+  }
+
+  // ---- Handle ArtSync (0x5200) ----
+  if (opCode == ARTNET_OP_SYNC) {
+    _syncReceived = true;
     return;
   }
 
@@ -228,10 +254,12 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
         }
         _universeReceived[strip] = stripComplete;
 
-        // ---- Check if ALL strips are now complete ----
+        // ---- Check if ALL ACTIVE strips are now complete ----
         bool allDone = true;
         for (uint8_t s = 0; s < 16; s++) {
-          if (!_universeReceived[s]) { allDone = false; break; }
+          if (_outputActive[s] && !_universeReceived[s]) {
+            allDone = false; break;
+          }
         }
         _allUpdated = allDone;
 
@@ -264,6 +292,12 @@ void ArtNetHandler::setUniverseMapping(const uint16_t startUniv[16])
 {
   memcpy(_startUniverse, startUniv, sizeof(_startUniverse));
   resetFrameState();
+}
+
+// ---------------------------------------------------------------------------
+void ArtNetHandler::setOutputActive(const bool active[16])
+{
+  memcpy(_outputActive, active, sizeof(_outputActive));
 }
 
 // ---------------------------------------------------------------------------

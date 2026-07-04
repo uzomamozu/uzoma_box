@@ -131,6 +131,12 @@ void setup()
 
   // ---- Load / create config ---------------------------------------------
   loadConfig(g_config);
+  Serial.print("Output active loaded: ");
+  for (int i = 0; i < NUM_OUTPUTS; i++) {
+    Serial.print(g_config.outputActive[i] ? "1" : "0");
+    if (i < NUM_OUTPUTS - 1) Serial.print(",");
+  }
+  Serial.println();
   Serial.print("Mode: ");
   switch (g_config.mode) {
     case MODE_ARTNET:   Serial.println("ArtNet");  break;
@@ -158,6 +164,7 @@ void setup()
   // ---- Initialise ArtNet ------------------------------------------------
   g_artNet.setLedsPerStrip(g_config.ledWidth);
   g_artNet.setUniverseMapping(g_config.startUniverse);
+  g_artNet.setOutputActive(g_config.outputActive);
   g_artNet.setFrameCallback(onArtNetFrame);
   g_artNet.begin();
 
@@ -550,21 +557,25 @@ void handleTcpCommand(int cmd, const char *cmdStr)
           tok = strtok(NULL, ",");
         }
         saveConfig(g_config);
-        g_tcp.sendResponse("OK:start_universe updated – rebooting");
-        delay(100);
-        rebootTeensy();
+        g_tcp.sendResponse("OK:start_universe saved");
+        // No reboot — next command will trigger it
       } else if (!strncmp(kv, "output_active=", 14)) {
         int idx = 0;
         char val[64]; strncpy(val, kv + 14, 63); val[63] = 0;
         char *tok = strtok(val, ",");
+        Serial.print("output_active received: ");
         while (tok && idx < NUM_OUTPUTS) {
           g_config.outputActive[idx++] = (atoi(tok) != 0);
+          Serial.print(tok);
+          Serial.print(idx < NUM_OUTPUTS ? "," : "");
           tok = strtok(NULL, ",");
         }
+        Serial.println();
         saveConfig(g_config);
-        g_tcp.sendResponse("OK:output_active updated – rebooting");
-        delay(100);
-        rebootTeensy();
+        Serial.println("saveConfig() done");
+        g_artNet.setOutputActive(g_config.outputActive);
+        g_tcp.sendResponse("OK:output_active saved (live)");
+        // No reboot — next command will trigger it
       } else if (!strncmp(kv, "color_order=", 12)) {
         ColorOrder order = parseColorOrder(kv + 12);
         g_config.colorOrder = order;
@@ -773,7 +784,15 @@ void printStatus()
                     i > 0 ? "," : "", g_config.startUniverse[i]);
   }
 
-  char buf[512];
+  // Build comma-separated output_active string
+  char oa[64];
+  pos = 0;
+  for (int i = 0; i < NUM_OUTPUTS; i++) {
+    pos += snprintf(oa + pos, sizeof(oa) - pos, "%s%c",
+                    i > 0 ? "," : "", g_config.outputActive[i] ? '1' : '0');
+  }
+
+  char buf[640];
   snprintf(buf, sizeof(buf),
     "mode=%s\r\n"
     "ip=%d.%d.%d.%d\r\n"
@@ -792,6 +811,7 @@ void printStatus()
     "start_universe=%s\r\n"
     "file_pos=%lu\r\n"
     "file_total=%lu\r\n"
+    "output_active=%s\r\n"
     "output_count=%d",
     (g_mode == MODE_ARTNET)   ? "artnet" :
     (g_mode == MODE_PLAYBACK) ? "playback" :
@@ -812,6 +832,7 @@ void printStatus()
     su,
     (g_playback.isPlaying() ? g_playback.filePosition() : 0),
     (g_playback.isPlaying() ? g_playback.fileSize() : 0),
+    oa,
     NUM_OUTPUTS
   );
   g_tcp.sendResponse(buf);

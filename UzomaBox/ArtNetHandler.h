@@ -12,6 +12,7 @@
 #define ARTNET_OP_DMX       0x5000
 #define ARTNET_OP_POLL      0x2000
 #define ARTNET_OP_POLL_REPLY 0x2100
+#define ARTNET_OP_SYNC      0x5200
 #define ARTNET_POLL_REPLY_LEN 300  // max ArtPollReply length (16 ports)
 
 // Maximum universes per strip (safety for up to 682 LEDs: 682*3=2046, ceil/512=4)
@@ -19,7 +20,7 @@
 
 // Maximum time (ms) to wait for a complete frame before flushing partial data
 // Prevents LED freeze when one universe is lost
-#define FRAME_TIMEOUT_MS     50
+#define FRAME_TIMEOUT_MS     16
 
 // Maximum pixel capacity (512 LEDs/strip × 16 strips)
 #define MAX_TOTAL_PIXELS     (512 * 16)
@@ -67,6 +68,9 @@ public:
   // Send ArtPollReply so Resolume/Jinx discover this device
   void sendArtPollReply();
 
+  // Set which outputs are physically active (skips disabled strips in frame assembly)
+  void setOutputActive(const bool active[16]);
+
 private:
   // Static DMAMEM frame buffer — no heap allocation
   // Shared across all instances; only one ArtNetHandler should exist.
@@ -107,6 +111,13 @@ private:
   bool          _frameReady;                     // true when a complete frame is ready for show()
   bool          _frameStarted;                   // true once at least 1 sub-universe arrived
   uint32_t      _frameStartTime;                 // ms when first sub-universe of this frame arrived
+
+  // Output active mask (disabled strips skip frame assembly check)
+  bool          _outputActive[16];
+
+  // ArtSync state
+  bool          _syncReceived;                   // true when ArtSync packet received this frame
+  bool          _waitingForSync;                 // true when frame complete but waiting for sync
 };
 
 #endif
