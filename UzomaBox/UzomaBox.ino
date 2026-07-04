@@ -55,8 +55,7 @@ MenuManager        g_menu;
 // Current operating mode
 OperatingMode      g_mode = MODE_ARTNET;
 
-// Recording state (active even in ArtNet mode when recording is triggered)
-bool               g_recordingActive = false;
+// Recording trigger configuration (active even in ArtNet mode)
 uint8_t            g_recStartMode    = 0;  // 0=immediate, 1=first non-zero, 2=channel change
 uint8_t            g_recStopMode     = 0;  // 0=immediate, 1=all zero, 2=timer
 uint16_t           g_recTrigUniv     = 0;
@@ -316,7 +315,7 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 
   // ---- Recording trigger logic ------------------------------------------
   // Start triggers (when armed)
-  if (g_recArmed && !g_recordingActive) {
+  if (g_recArmed && !g_playback.isRecording()) {
     bool shouldStart = false;
     if (g_recStartMode == 0) {
       shouldStart = true;  // Immediate
@@ -343,7 +342,7 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
     }
     if (shouldStart) {
       g_recArmed = false;
-      g_recordingActive = true;
+      g_playback.startRecording();
       g_playback.resetFrameCount();
       g_recStopStart = millis() / 1000;
       Serial.println("Recording started by trigger");
@@ -351,7 +350,7 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
   }
 
   // Write frame if recording is active
-  if (g_recordingActive) {
+  if (g_playback.isRecording()) {
     // Dedup: skip frame if it arrives within 15ms of the previous one.
     // ArtNet's double-fire (timeout + _allUpdated) can trigger the
     // callback twice for the same logical frame.
@@ -400,7 +399,6 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
     }
     if (shouldStop) {
       g_playback.stopRecording();
-      g_recordingActive = false;
       g_recArmed = false;
       Serial.println("Recording stopped by trigger");
     }
@@ -440,7 +438,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     case CMD_REC_START:
       if (g_recStartMode == 0 || g_recArmed) {
         if (g_playback.startRecording()) {
-          g_recordingActive = true;
           g_lastArtNetFrame = micros();
           g_playback.resetFrameCount();
           g_tcp.sendResponse("OK:recording started");
@@ -504,9 +501,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       break;
 
     case CMD_REC_STOP:
-      if (g_recordingActive) {
-        g_playback.stopRecording();
-        g_recordingActive = false;
+      if (g_playback.stopRecording()) {
         g_tcp.sendResponse("OK:recording stopped");
         Serial.println("Recording stopped");
       } else {
@@ -630,10 +625,12 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_STOP:
+      // Only clear LEDs if we were in playback mode
+      if (g_playback.isPlaying()) {
+        g_leds.clear();
+        g_leds.show();
+      }
       g_playback.stop();
-      g_recordingActive = false;
-      g_leds.clear();
-      g_leds.show();
       g_tcp.sendResponse("OK:stopped");
       break;
 
@@ -745,7 +742,6 @@ void setMode(OperatingMode newMode)
 {
   // Stop any ongoing activity
   g_playback.stop();
-  g_recordingActive = false;
   g_leds.clear();
   g_leds.show();
 
@@ -819,7 +815,7 @@ void printStatus()
     g_config.ip[0], g_config.ip[1], g_config.ip[2], g_config.ip[3],
     g_config.ledWidth,
     g_frameCounter,
-    g_recordingActive ? "yes" : "no",
+    g_playback.isRecording() ? "yes" : "no",
     g_playback.isPlaying() ? "yes" : "no",
     g_playback.currentFilename(),
     g_playback.framesPlayed(),

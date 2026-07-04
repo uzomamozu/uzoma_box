@@ -197,6 +197,7 @@ class DeviceConfigWindow:
         self._num_outputs = 8  # default until we query the firmware
         self._start_univ_dirty = []
         self._color_order_dirty = False
+        self._output_active_dirty = False
         self._breath_active = False
         self._breath_val = 0.0
         self._breath_after_id = None
@@ -347,6 +348,9 @@ class DeviceConfigWindow:
                       font=("Consolas", 9)).pack(side=tk.LEFT)
         self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
         self.color_order_var.trace_add("write", lambda *a: self._on_color_order_changed())
+        # Add trace to all output active checkboxes
+        for av in self.output_active_vars:
+            av.trace_add("write", lambda *a: self._on_output_active_changed())
         self._update_all_univ_ranges()
         ttk.Button(frame, text="OK & Reboot",
                    command=self._save_led).pack(pady=12)
@@ -424,6 +428,10 @@ class DeviceConfigWindow:
     def _on_color_order_changed(self):
         """Mark color order as dirty so status poll doesn't overwrite it."""
         self._color_order_dirty = True
+
+    def _on_output_active_changed(self):
+        """Mark output active as dirty so status poll doesn't overwrite it."""
+        self._output_active_dirty = True
 
     def _update_all_univ_ranges(self):
         count = min(self._num_outputs, len(self.start_univ_vars))
@@ -802,9 +810,9 @@ class DeviceConfigWindow:
             if not l.strip():
                 continue
             files.append(l)
-        self._file_list = files
+        self._file_list = sorted(files)
         self.file_listbox.delete(0, tk.END)
-        for fn in sorted(files):
+        for fn in self._file_list:
             self.file_listbox.insert(tk.END, fn)
 
     def _on_file_select(self, event):
@@ -860,10 +868,11 @@ class DeviceConfigWindow:
                     self.start_univ_vars[i].set(p.strip())
             self._update_all_univ_ranges()
         elif k == "output_active":
-            parts = v.split(",")
-            for i, p in enumerate(parts):
-                if i < len(self.output_active_vars) and not self._start_univ_dirty[i]:
-                    self.output_active_vars[i].set(p.strip() == "1")
+            if not self._output_active_dirty:
+                parts = v.split(",")
+                for i, p in enumerate(parts):
+                    if i < len(self.output_active_vars):
+                        self.output_active_vars[i].set(p.strip() == "1")
         elif k == "record_fps":
             self.record_fps_var.set(v)
         elif k == "output_count":

@@ -20,7 +20,7 @@ extern LEDController      g_leds;
 extern ArtNetHandler      g_artNet;
 extern PlaybackController g_playback;
 extern OperatingMode      g_mode;
-extern bool               g_recordingActive;
+// g_recordingActive removed — use g_playback.isRecording() instead
 extern uint8_t            g_recStartMode;
 extern uint8_t            g_recStopMode;
 extern uint16_t           g_recTrigUniv;
@@ -342,13 +342,11 @@ void MenuManager::_handleEvent(ButtonEvent ev)
         if (_cursor < 3) { _cursor++; _dirty = true; }
       } else if (ev == BTN_OK) {
         if (_cursor == 0) {  // Start / Stop recording
-          if (g_recordingActive) {
+          if (g_playback.isRecording()) {
             g_playback.stopRecording();
-            g_recordingActive = false;
             showStatusBrief("Recording stop");
           } else {
             if (g_playback.startRecording()) {
-              g_recordingActive = true;
               showStatusBrief("Recording...");
             } else {
               showStatusBrief("Record failed");
@@ -367,7 +365,6 @@ void MenuManager::_handleEvent(ButtonEvent ev)
           _setScreen(SCREEN_REC_TRIGGER, 0);
         } else if (_cursor == 3) {  // Stop current (alias for safety)
           g_playback.stopRecording();
-          g_recordingActive = false;
           showStatusBrief("Stopped");
           _setScreen(SCREEN_HOME, 0);
         }
@@ -654,7 +651,7 @@ void MenuManager::_drawHome()
     case MODE_RECORD:   _display.print("Record"); break;
     case MODE_TEST:     _display.print("Test"); break;
   }
-  if (g_recordingActive) {
+  if (g_playback.isRecording()) {
     _display.print(" [REC]");
   }
 
@@ -855,7 +852,7 @@ void MenuManager::_drawRecordScreen()
   _display.setTextColor(SSD1306_BLACK);
   _display.setCursor(2, 0);
   _display.print("RECORD");
-  if (g_recordingActive) {
+  if (g_playback.isRecording()) {
     _display.setCursor(80, 0);
     _display.print("[REC]");
   }
