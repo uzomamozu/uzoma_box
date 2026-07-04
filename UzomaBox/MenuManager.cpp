@@ -79,6 +79,8 @@ MenuManager::MenuManager()
   , _dirty(true)
   , _okPressStartMs(0)
   , _okLongHandled(false)
+  , _upDownPressStartMs(0)
+  , _upDownRepeatActive(false)
   , _lastActivityMs(0)
   , _idleOverride(false)
   , _briefActive(false)
@@ -136,9 +138,10 @@ void MenuManager::update()
   if (!_displayAvailable) return;
 
   // ---- Long-press detection for OK button on HOME screen ----
-  _btnSelect.update();
+  // Use raw pin read (not Bounce) so it doesn't interfere with _readButtons()
+  bool okPressed = (digitalRead(PIN_BTN_SELECT) == LOW);
   if (_screen == SCREEN_HOME) {
-    if (_btnSelect.read() == LOW) {
+    if (okPressed) {
       if (_okPressStartMs == 0) {
         _okPressStartMs = millis();
         _okLongHandled = false;
@@ -160,8 +163,42 @@ void MenuManager::update()
     _okPressStartMs = 0;
   }
 
-  // ---- Read button events ----
+  // ---- Read button events (Bounce-based) ----
   ButtonEvent ev = _readButtons();
+
+  // ---- After long-press triggers test, suppress OK release event ----
+  if (_okLongHandled && ev == BTN_OK) {
+    ev = BTN_NONE;
+  }
+
+  // ---- Auto-repeat in value editor when button held ----
+  if (_screen == SCREEN_EDIT_VALUE) {
+    bool upPressed = (digitalRead(PIN_BTN_UP) == LOW);
+    bool downPressed = (digitalRead(PIN_BTN_DOWN) == LOW);
+    if (upPressed || downPressed) {
+      if (_upDownPressStartMs == 0) {
+        _upDownPressStartMs = millis();
+        _upDownRepeatActive = false;
+      } else if (!_upDownRepeatActive && (millis() - _upDownPressStartMs > 500)) {
+        _upDownRepeatActive = true;
+      }
+      if (_upDownRepeatActive) {
+        if (upPressed) {
+          _editValue += _editStep * 10;
+          if (_editValue > _editMax) _editValue = _editMax;
+          _dirty = true;
+        }
+        if (downPressed) {
+          _editValue -= _editStep * 10;
+          if (_editValue < _editMin) _editValue = _editMin;
+          _dirty = true;
+        }
+      }
+    } else {
+      _upDownPressStartMs = 0;
+      _upDownRepeatActive = false;
+    }
+  }
 
   // ---- Toggle test pattern when OK pressed in Test mode on HOME ----
   if (g_mode == MODE_TEST && ev == BTN_OK && _screen == SCREEN_HOME) {

@@ -95,6 +95,10 @@ private:
   uint32_t   _okPressStartMs;    // millis() when OK was pressed (0 = not pressed)
   bool       _okLongHandled;     // true once long-press was triggered
 
+  // Auto-repeat for UP/DOWN in value editor
+  uint32_t   _upDownPressStartMs; // millis() when UP/DOWN was pressed
+  bool       _upDownRepeatActive; // true after hold threshold exceeded
+
   // Idle timeout — return home after 15s inactivity
   uint32_t   _lastActivityMs;
   bool       _idleOverride;   // don't auto-return when editing
