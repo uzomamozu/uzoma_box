@@ -77,6 +77,8 @@ MenuManager::MenuManager()
   , _confirmPrompt(nullptr)
   , _confirmCallback(nullptr)
   , _dirty(true)
+  , _okPressStartMs(0)
+  , _okLongHandled(false)
   , _lastActivityMs(0)
   , _idleOverride(false)
   , _briefActive(false)
@@ -133,7 +135,44 @@ void MenuManager::update()
 {
   if (!_displayAvailable) return;
 
+  // ---- Long-press detection for OK button on HOME screen ----
+  _btnSelect.update();
+  if (_screen == SCREEN_HOME) {
+    if (_btnSelect.read() == LOW) {
+      if (_okPressStartMs == 0) {
+        _okPressStartMs = millis();
+        _okLongHandled = false;
+      } else if (!_okLongHandled && (millis() - _okPressStartMs >= 3000)) {
+        _okLongHandled = true;
+        setMode(MODE_TEST);
+        extern uint8_t g_testPattern;
+        extern uint32_t g_testStartMs;
+        g_testPattern = 1;
+        g_testStartMs = millis();
+        showStatusBrief("Test mode");
+        _setScreen(SCREEN_HOME, 0);
+        _dirty = true;
+      }
+    } else {
+      _okPressStartMs = 0;
+    }
+  } else {
+    _okPressStartMs = 0;
+  }
+
+  // ---- Read button events ----
   ButtonEvent ev = _readButtons();
+
+  // ---- Toggle test pattern when OK pressed in Test mode on HOME ----
+  if (g_mode == MODE_TEST && ev == BTN_OK && _screen == SCREEN_HOME) {
+    extern uint8_t g_testPattern;
+    extern uint32_t g_testStartMs;
+    g_testPattern = (g_testPattern == 0) ? 1 : 0;
+    g_testStartMs = millis();
+    showStatusBrief(g_testPattern == 0 ? "RGBW" : "Fade");
+    _dirty = true;
+    ev = BTN_NONE;  // consume event, don't open menu
+  }
 
   if (ev != BTN_NONE) {
     _lastActivityMs = millis();
@@ -229,7 +268,9 @@ void MenuManager::_handleEvent(ButtonEvent ev)
 
     // ==================== HOME ====================
     case SCREEN_HOME:
-      if (ev == BTN_OK || ev == BTN_UP || ev == BTN_DOWN) {
+      if (ev == BTN_OK) {
+        _returnToMain();
+      } else if (ev == BTN_UP || ev == BTN_DOWN) {
         _returnToMain();
       }
       break;

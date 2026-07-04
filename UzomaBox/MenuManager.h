@@ -91,6 +91,10 @@ private:
   // Dirty flag — only redraw when something changes
   bool       _dirty;
 
+  // Long-press OK tracking
+  uint32_t   _okPressStartMs;    // millis() when OK was pressed (0 = not pressed)
+  bool       _okLongHandled;     // true once long-press was triggered
+
   // Idle timeout — return home after 15s inactivity
   uint32_t   _lastActivityMs;
   bool       _idleOverride;   // don't auto-return when editing
