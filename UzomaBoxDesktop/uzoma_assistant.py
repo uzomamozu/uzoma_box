@@ -404,6 +404,8 @@ class DeviceConfigWindow:
         return 'break'
 
     def _update_univ_range(self, idx):
+        if idx >= len(self.start_univ_vars):
+            return
         led_w = self.led_width_var.get()
         start_u = self.start_univ_vars[idx].get()
         end_u, end_ch = self._compute_univ_range(led_w, start_u)
@@ -418,7 +420,8 @@ class DeviceConfigWindow:
             self.subnet_univ_vars[idx].set("--")
 
     def _update_all_univ_ranges(self):
-        for i in range(self._num_outputs):
+        count = min(self._num_outputs, len(self.start_univ_vars))
+        for i in range(count):
             self._update_univ_range(i)
 
     # ---- ArtNet Tab (Tab 3) ----
@@ -840,8 +843,9 @@ class DeviceConfigWindow:
             self.led_width_var.set(v)
         elif k == "start_universe":
             parts = v.split(",")
+            max_i = min(self._num_outputs, len(self.start_univ_vars))
             for i, p in enumerate(parts):
-                if i < self._num_outputs and not self._start_univ_dirty[i]:
+                if i < max_i and not self._start_univ_dirty[i]:
                     self.start_univ_vars[i].set(p.strip())
             self._update_all_univ_ranges()
         elif k == "record_fps":

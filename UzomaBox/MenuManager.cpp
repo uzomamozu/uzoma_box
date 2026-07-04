@@ -26,7 +26,7 @@ extern uint8_t            g_recStopMode;
 extern uint16_t           g_recTrigUniv;
 extern uint16_t           g_recTrigCh;
 extern uint32_t           g_frameCounter;
-extern uint32_t           g_fpsFrames;
+extern uint32_t           g_fpsDisplay;
 extern void setMode(OperatingMode newMode);
 extern void rebootTeensy();
 
@@ -113,9 +113,10 @@ void MenuManager::begin()
 
   // Initialise I2C and OLED display
   Wire.begin();
-  if (!_display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED init failed (0x3C)");
-    // Not fatal — device continues without display
+  _displayAvailable = _display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  if (!_displayAvailable) {
+    Serial.println("OLED not available — menu disabled");
+    return;
   }
   _display.setTextWrap(false);
   _display.clearDisplay();
@@ -130,6 +131,8 @@ void MenuManager::begin()
 
 void MenuManager::update()
 {
+  if (!_displayAvailable) return;
+
   ButtonEvent ev = _readButtons();
 
   if (ev != BTN_NONE) {
@@ -570,6 +573,8 @@ void MenuManager::_rebootApply()
 
 void MenuManager::_render()
 {
+  if (!_displayAvailable) return;
+
   _display.clearDisplay();
 
   switch (_screen) {
@@ -629,7 +634,7 @@ void MenuManager::_drawStatusBar()
 
   // FPS on right
   _display.setCursor(128 - 40, 0);
-  _display.print(g_fpsFrames);
+  _display.print(g_fpsDisplay);
   _display.print("fps");
 }
 
@@ -664,7 +669,7 @@ void MenuManager::_drawHome()
   // FPS
   _display.setCursor(0, 24);
   _display.print("FPS: ");
-  _display.print(g_fpsFrames);
+  _display.print(g_fpsDisplay);
 
   // Current file (if playing)
   if (g_playback.isPlaying()) {

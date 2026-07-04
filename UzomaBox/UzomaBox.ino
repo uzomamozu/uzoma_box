@@ -86,6 +86,7 @@ uint32_t           g_lastDiscoveryPoll  = 0;
 
 // Incoming ArtNet FPS meter
 uint32_t           g_fpsFrames = 0;
+uint32_t           g_fpsDisplay = 0;   // stable FPS value (updated each second)
 uint32_t           g_fpsLastPrint = 0;
 
 // Playback temporary buffer (max 16 strips × 512 LEDs × 3 bytes = 24576)
@@ -222,12 +223,9 @@ void loop()
     }
   }
 
-  // ---- Poll UDP discovery (throttled to every 5s) -----------------------
-  if (millis() - g_lastDiscoveryPoll > 5000) {
-    g_lastDiscoveryPoll = millis();
-    g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
-                     Ethernet.localIP(), 0);
-  }
+  // ---- Poll UDP discovery (every loop — parsePacket is non-blocking) ----
+  g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
+                   Ethernet.localIP(), 0);
 
   // ---- Mode-specific behaviour ------------------------------------------
 
@@ -235,8 +233,14 @@ void loop()
 
     case MODE_ARTNET:
       // Poll for incoming ArtNet packets – the callback (onArtNetFrame)
-      // will be called when a complete frame is assembled.
+      // writes data to drawing memory without calling show().
       g_artNet.poll();
+
+      // Deferred show(): only call leds.show() when a full frame is ready
+      if (g_artNet.isFrameReady()) {
+        g_artNet.clearFrameReady();
+        g_leds.show();
+      }
 
       // If recording is active, frames are captured in the callback
       break;
@@ -282,6 +286,7 @@ void loop()
   // ---- Incoming ArtNet FPS meter (kept for STATUS, no serial print) -----
   uint32_t now = millis();
   if (now - g_fpsLastPrint >= 1000) {
+    g_fpsDisplay = g_fpsFrames;   // capture stable value before reset
     g_fpsFrames = 0;
     g_fpsLastPrint = now;
   }
@@ -298,9 +303,9 @@ void loop()
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  // Push to LEDs – fillFrameDirect uses memcpy per strip for ORDER_RGB
+  // Push to LED drawing memory – fillFrameDirect uses memcpy per strip
+  // show() is called later in loop() via g_artNet.isFrameReady()
   g_leds.fillFrameDirect(rgbData, totalPixels);
-  g_leds.show();
 
   // ---- Recording trigger logic ------------------------------------------
   // Start triggers (when armed)
@@ -799,7 +804,7 @@ void printStatus()
     g_playback.currentFilename(),
     g_playback.framesPlayed(),
     g_artNet.isReceiving() ? "yes" : "no",
-    (g_mode == MODE_ARTNET) ? g_fpsFrames : 0,
+    (g_mode == MODE_ARTNET) ? g_fpsDisplay : 0,
     colorOrderStr(g_config.colorOrder),
     g_playback.getSpeed(),
     g_config.recordFps,

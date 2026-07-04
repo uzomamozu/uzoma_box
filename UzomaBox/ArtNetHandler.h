@@ -10,6 +10,9 @@
 #define ARTNET_HEADER_LEN   18   // ArtDMX packet header before DMX data
 #define ARTNET_DMX_LEN      512  // DMX channels per universe
 #define ARTNET_OP_DMX       0x5000
+#define ARTNET_OP_POLL      0x2000
+#define ARTNET_OP_POLL_REPLY 0x2100
+#define ARTNET_POLL_REPLY_LEN 300  // max ArtPollReply length (16 ports)
 
 // Maximum universes per strip (safety for up to 682 LEDs: 682*3=2046, ceil/512=4)
 #define MAX_UNIVERSES_PER_STRIP  4
@@ -48,6 +51,10 @@ public:
   // Check if we are actively receiving ArtNet
   bool isReceiving() const { return _receiving; }
 
+  // Check if a new complete frame is ready (for deferred show())
+  bool isFrameReady() const { return _frameReady; }
+  void clearFrameReady() { _frameReady = false; }
+
   // Reset receiving timeout
   void resetTimeout();
 
@@ -56,6 +63,9 @@ public:
 
   // Number of LEDs per strip (needs to be set before begin or on config change)
   void setLedsPerStrip(uint16_t n);
+
+  // Send ArtPollReply so Resolume/Jinx discover this device
+  void sendArtPollReply();
 
 private:
   // Static DMAMEM frame buffer — no heap allocation
@@ -94,6 +104,7 @@ private:
   bool          _universeReceived[16];            // true when strip has all sub-universes
   bool          _universeSubReceived[16][MAX_UNIVERSES_PER_STRIP]; // per sub-universe flag
   bool          _allUpdated;                     // true if all strips have data
+  bool          _frameReady;                     // true when a complete frame is ready for show()
   bool          _frameStarted;                   // true once at least 1 sub-universe arrived
   uint32_t      _frameStartTime;                 // ms when first sub-universe of this frame arrived
 };

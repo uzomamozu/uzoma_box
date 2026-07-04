@@ -17,6 +17,7 @@ ArtNetHandler::ArtNetHandler()
   , _universesPerStrip(3)
   , _frameCb(nullptr)
   , _allUpdated(false)
+  , _frameReady(false)
   , _frameStarted(false)
   , _frameStartTime(0)
 {
@@ -96,11 +97,14 @@ void ArtNetHandler::resetFrameState()
 }
 
 // ---------------------------------------------------------------------------
+// Called on frame assembly timeout — fills drawing memory via callback
+// and signals that show() should be called from main loop.
 void ArtNetHandler::flushFrame()
 {
   if (_frameCb) {
     _frameCb(s_frameBuffer, _totalPixels);
   }
+  _frameReady = true;
   resetFrameState();
 }
 
@@ -109,19 +113,16 @@ int ArtNetHandler::poll()
 {
   int parsed = 0;
 
-  // Process at most 1 packet per poll() call to avoid starving the rest of loop()
-  int packetSize = _udp.parsePacket();
-  if (packetSize > 0) {
+  // Drain ALL packets from the UDP buffer (not just 1)
+  int packetSize;
+  while ((packetSize = _udp.parsePacket()) > 0) {
     // Read into a fixed-size buffer; reject packets larger than the buffer
-    // (they are either malformed or jumbo frames this device can't handle)
     int readSize = packetSize;
     if (readSize > (int)sizeof(_packetBuffer)) {
       readSize = sizeof(_packetBuffer);
     }
     int n = _udp.read(_packetBuffer, readSize);
-    // ArtDMX minimum: header (18) + at least 1 DMX byte.
-    // processPacket() will further validate the packet contents.
-    if (n >= ARTNET_HEADER_LEN + 1) {
+    if (n >= 14) {
       processPacket(_packetBuffer, n);
       parsed++;
     }
@@ -134,15 +135,14 @@ int ArtNetHandler::poll()
 
   // ---- Frame assembly timeout ----
   if (_frameStarted && (millis() - _frameStartTime > FRAME_TIMEOUT_MS)) {
+    // Defer the callback: just set the flag, show() happens in main loop
     flushFrame();
   }
 
   // ---- Full frame ready ----
   if (_allUpdated) {
     _allUpdated = false;
-    if (_frameCb) {
-      _frameCb(s_frameBuffer, _totalPixels);
-    }
+    _frameReady = true;
     resetFrameState();
   }
 
@@ -159,12 +159,23 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
     return;
   }
 
-  // Reject malformed packets (must have at least header + 1 DMX byte)
-  if (len < ARTNET_HEADER_LEN + 1) return;
+  // Must have at least OpCode to determine packet type
+  if (len < 10) return;
 
-  // Check OpCode (ArtDMX = 0x5000 little-endian)
+  // Check OpCode
   uint16_t opCode = packet[8] | (packet[9] << 8);
+
+  // ---- Handle ArtPoll (0x2000) ----
+  if (opCode == ARTNET_OP_POLL) {
+    sendArtPollReply();
+    return;
+  }
+
+  // ---- Handle ArtDMX (0x5000) ----
   if (opCode != ARTNET_OP_DMX) return;
+
+  // ArtDMX requires at least header (18) + 1 DMX byte
+  if (len < ARTNET_HEADER_LEN + 1) return;
 
   // Extract universe
   uint16_t universe = packet[14] | (packet[15] << 8);
@@ -253,4 +264,81 @@ void ArtNetHandler::setUniverseMapping(const uint16_t startUniv[16])
 {
   memcpy(_startUniverse, startUniv, sizeof(_startUniverse));
   resetFrameState();
+}
+
+// ---------------------------------------------------------------------------
+void ArtNetHandler::sendArtPollReply()
+{
+  uint8_t reply[ARTNET_POLL_REPLY_LEN];
+  memset(reply, 0, sizeof(reply));
+
+  // Art-Net header: "Art-Net\0"
+  reply[0] = 'A'; reply[1] = 'r'; reply[2] = 't';
+  reply[3] = '-'; reply[4] = 'N'; reply[5] = 'e';
+  reply[6] = 't'; reply[7] = 0;
+
+  // OpCode ArtPollReply = 0x2100 (little-endian)
+  reply[8] = 0x00; reply[9] = 0x21;
+
+  // IP address of this device (big-endian, bytes 10-13)
+  IPAddress ip = Ethernet.localIP();
+  reply[10] = ip[0]; reply[11] = ip[1];
+  reply[12] = ip[2]; reply[13] = ip[3];
+
+  // Port (Art-Net = 6454, little-endian at bytes 14-15)
+  reply[14] = 0x36; reply[15] = 0x19;  // 6454 = 0x1936
+
+  // Net switch (byte 18), SubSwitch (byte 20), SwIn (byte 21)
+  reply[18] = 0;
+  reply[20] = 0;
+  reply[21] = 0;
+
+  // Short name (18 chars + null, bytes 26-43)
+  const char *name = "UzomaBox T4.1";
+  for (int i = 0; i < 18 && name[i]; i++) reply[26 + i] = name[i];
+
+  // Long name (64 chars, bytes 44-107)
+  const char *longName = "UzomaBox T4.1 16-output LED controller";
+  for (int i = 0; i < 64 && longName[i]; i++) reply[44 + i] = longName[i];
+
+  // Node report (64 chars, bytes 108-171)
+  const char *report = "OK";
+  for (int i = 0; i < 64 && report[i]; i++) reply[108 + i] = report[i];
+
+  // NumPorts = 16 (byte 172)
+  reply[172] = 16;
+
+  // Port types (bytes 173-188): 0x80 = DMX output
+  for (int i = 0; i < 16 && i < 16; i++) reply[173 + i] = 0x80;
+
+  // GoodInput (bytes 189-204): all 0
+  // GoodOutput (bytes 205-220): bit 2 = output enabled
+  for (int i = 0; i < 16; i++) reply[205 + i] = 0x04;
+
+  // SwIn (bytes 221-236): default to 0
+  // SwOut (bytes 237-252): universe index
+  for (int i = 0; i < 16; i++) {
+    reply[237 + i] = _startUniverse[i] & 0xFF;
+  }
+
+  // Style = 0x00 (Controller, Art-Net spec)
+  reply[251] = 0x00;
+
+  // MAC address (bytes 252-257)
+  // Use IP octets as placeholder (MAC not available via NativeEthernet)
+  reply[252] = ip[0]; reply[253] = ip[1];
+  reply[254] = ip[2]; reply[255] = ip[3];
+  reply[256] = 0x00; reply[257] = 0x00;
+
+  // Bind IP (bytes 258-261) = same as device IP
+  reply[258] = ip[0]; reply[259] = ip[1];
+  reply[260] = ip[2]; reply[261] = ip[3];
+
+  // Bind index (byte 262) = 0
+  // Status (byte 263) = 0
+
+  // Send reply back to whoever sent the ArtPoll
+  _udp.beginPacket(_udp.remoteIP(), _udp.remotePort());
+  _udp.write(reply, ARTNET_POLL_REPLY_LEN);
+  _udp.endPacket();
 }

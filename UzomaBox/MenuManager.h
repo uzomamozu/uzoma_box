@@ -85,6 +85,9 @@ private:
   const char *_confirmPrompt;
   bool       (*_confirmCallback)(bool);
 
+  // Display availability — false if OLED init failed (prevents I2C lockups)
+  bool       _displayAvailable;
+
   // Dirty flag — only redraw when something changes
   bool       _dirty;
 
