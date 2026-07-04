@@ -345,6 +345,7 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
       g_playback.startRecording();
       g_playback.resetFrameCount();
       g_recStopStart = millis() / 1000;
+      if (g_mode == MODE_ARTNET) g_mode = MODE_RECORD;
       Serial.println("Recording started by trigger");
     }
   }
@@ -440,8 +441,10 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         if (g_playback.startRecording()) {
           g_lastArtNetFrame = micros();
           g_playback.resetFrameCount();
-          g_tcp.sendResponse("OK:recording started");
           g_recStopStart = millis() / 1000;
+          g_recArmed = false;
+          if (g_mode == MODE_ARTNET) g_mode = MODE_RECORD;
+          g_tcp.sendResponse("OK:recording started");
           Serial.printf("Recording started: %s\n", g_playback.currentFilename());
         } else {
           g_tcp.sendResponse("ERR:could not start recording");

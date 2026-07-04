@@ -758,11 +758,16 @@ class DeviceConfigWindow:
         self._cmd_send("REC:STOP_SECS=%s" % self.rec_stop_secs_var.get())
         time.sleep(0.05)
 
-        self._cmd_send("REC:START")
+        # Only send REC:START for immediate mode; otherwise just arm
+        if start_mode == "0":
+            self._cmd_send("REC:START")
+            self.log("Recording started on %s" % self.ip)
+        else:
+            self._cmd_send("REC:ARM")
+            self.log("Recording armed (trigger) on %s" % self.ip)
         self.rec_start_btn.config(state=tk.DISABLED)
         self.rec_stop_btn.config(state=tk.NORMAL)
         self.rec_status_var.set("Recording...")
-        self.log("Recording started on %s" % self.ip)
 
     def _rec_stop(self):
         self._cmd_send("REC:STOP")
