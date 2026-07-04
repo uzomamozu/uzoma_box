@@ -912,8 +912,12 @@ class DeviceConfigWindow:
         elif k == "recording":
             if v.lower() == "yes":
                 self.rec_status_var.set("Recording...")
+                self.rec_start_btn.config(state=tk.DISABLED)
+                self.rec_stop_btn.config(state=tk.NORMAL)
             else:
                 self.rec_status_var.set("Idle")
+                self.rec_start_btn.config(state=tk.NORMAL)
+                self.rec_stop_btn.config(state=tk.DISABLED)
         elif k == "record_time":
             try:
                 secs = int(v)

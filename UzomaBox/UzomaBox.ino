@@ -282,6 +282,12 @@ void loop()
       // In record mode, we poll ArtNet to see incoming data
       // (the user triggers REC:START / REC:STOP via TCP)
       g_artNet.poll();
+
+      // Show LEDs during recording too
+      if (g_artNet.isFrameReady()) {
+        g_artNet.clearFrameReady();
+        g_leds.show();
+      }
       break;
 
     case MODE_TEST:
