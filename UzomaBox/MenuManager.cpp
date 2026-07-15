@@ -77,8 +77,9 @@ MenuManager::MenuManager()
   , _confirmPrompt(nullptr)
   , _confirmCallback(nullptr)
   , _dirty(true)
-  , _okPressStartMs(0)
-  , _okLongHandled(false)
+  , _redPressStartMs(0)
+  , _redLongHandled(false)
+  , _prevMode(0)
   , _upDownPressStartMs(0)
   , _upDownRepeatActive(false)
   , _lastActivityMs(0)
@@ -98,26 +99,29 @@ MenuManager::~MenuManager()
 void MenuManager::begin()
 {
   // Initialise button pins with internal pull-up
+  pinMode(PIN_BTN_RED,    INPUT_PULLUP);
   pinMode(PIN_BTN_UP,     INPUT_PULLUP);
   pinMode(PIN_BTN_DOWN,   INPUT_PULLUP);
   pinMode(PIN_BTN_SELECT, INPUT_PULLUP);
   pinMode(PIN_BTN_BACK,   INPUT_PULLUP);
 
   // Attach Bounce instances
+  _btnRed.attach(PIN_BTN_RED,    INPUT_PULLUP);
   _btnUp.attach(PIN_BTN_UP,     INPUT_PULLUP);
   _btnDown.attach(PIN_BTN_DOWN, INPUT_PULLUP);
   _btnSelect.attach(PIN_BTN_SELECT, INPUT_PULLUP);
   _btnBack.attach(PIN_BTN_BACK, INPUT_PULLUP);
 
   // 30 ms debounce
+  _btnRed.interval(30);
   _btnUp.interval(30);
   _btnDown.interval(30);
   _btnSelect.interval(30);
   _btnBack.interval(30);
 
-  // Initialise I2C and OLED display
+  // Initialise I2C and OLED display (pins defined in Pins.h)
   Wire.begin();
-  _displayAvailable = _display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  _displayAvailable = _display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
   if (!_displayAvailable) {
     Serial.println("OLED not available — menu disabled");
     return;
@@ -137,38 +141,62 @@ void MenuManager::update()
 {
   if (!_displayAvailable) return;
 
-  // ---- Long-press detection for OK button on HOME screen ----
-  // Use raw pin read (not Bounce) so it doesn't interfere with _readButtons()
-  bool okPressed = (digitalRead(PIN_BTN_SELECT) == LOW);
-  if (_screen == SCREEN_HOME) {
-    if (okPressed) {
-      if (_okPressStartMs == 0) {
-        _okPressStartMs = millis();
-        _okLongHandled = false;
-      } else if (!_okLongHandled && (millis() - _okPressStartMs >= 3000)) {
-        _okLongHandled = true;
+  // ---- Read button events (Bounce-based) ----
+  ButtonEvent ev = _readButtons();
+
+  // ---- Botón rojo: control de modo test ----
+  _btnRed.update();
+  bool redPressed = (digitalRead(PIN_BTN_RED) == LOW);
+
+  if (g_mode != MODE_TEST) {
+    // No estamos en TEST: long-press 3s → entrar TEST
+    if (redPressed) {
+      if (_redPressStartMs == 0) {
+        _redPressStartMs = millis();
+        _redLongHandled = false;
+      } else if (!_redLongHandled && (millis() - _redPressStartMs >= 3000)) {
+        _redLongHandled = true;
+        _prevMode = (uint8_t)g_mode;
         setMode(MODE_TEST);
         extern uint8_t g_testPattern;
         extern uint32_t g_testStartMs;
-        g_testPattern = 1;
+        g_testPattern = 1;  // Color Fade
         g_testStartMs = millis();
         showStatusBrief("Test mode");
         _setScreen(SCREEN_HOME, 0);
         _dirty = true;
       }
     } else {
-      _okPressStartMs = 0;
+      _redPressStartMs = 0;
     }
   } else {
-    _okPressStartMs = 0;
-  }
-
-  // ---- Read button events (Bounce-based) ----
-  ButtonEvent ev = _readButtons();
-
-  // ---- After long-press triggers test, suppress OK release event ----
-  if (_okLongHandled && ev == BTN_OK) {
-    ev = BTN_NONE;
+    // Estamos en TEST
+    if (redPressed) {
+      if (_redPressStartMs == 0) {
+        _redPressStartMs = millis();
+        _redLongHandled = false;
+      } else if (!_redLongHandled && (millis() - _redPressStartMs >= 3000)) {
+        // Long-press 3s en TEST → salir, restaurar modo anterior
+        _redLongHandled = true;
+        OperatingMode prev = (OperatingMode)_prevMode;
+        if (prev == MODE_TEST) prev = MODE_ARTNET;  // safety fallback
+        setMode(prev);
+        showStatusBrief("Test off");
+        _setScreen(SCREEN_HOME, 0);
+        _dirty = true;
+      }
+    } else {
+      // Botón liberado: si fue < 3s → toggle pattern
+      if (_redPressStartMs != 0 && !_redLongHandled) {
+        extern uint8_t g_testPattern;
+        extern uint32_t g_testStartMs;
+        g_testPattern = (g_testPattern == 0) ? 1 : 0;
+        g_testStartMs = millis();
+        showStatusBrief(g_testPattern == 0 ? "RGBW" : "Fade");
+        _dirty = true;
+      }
+      _redPressStartMs = 0;
+    }
   }
 
   // ---- Auto-repeat in value editor when button held ----

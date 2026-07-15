@@ -62,6 +62,7 @@ private:
   Bounce _btnDown;
   Bounce _btnSelect;
   Bounce _btnBack;
+  Bounce _btnRed;           // botón rojo para test
 
   // Current screen and cursor position
   MenuScreen _screen;
@@ -91,9 +92,10 @@ private:
   // Dirty flag — only redraw when something changes
   bool       _dirty;
 
-  // Long-press OK tracking
-  uint32_t   _okPressStartMs;    // millis() when OK was pressed (0 = not pressed)
-  bool       _okLongHandled;     // true once long-press was triggered
+  // Botón rojo (test): long-press tracking and previous mode save
+  uint32_t   _redPressStartMs;    // millis() when RED was pressed (0 = not pressed)
+  bool       _redLongHandled;     // true once long-press was triggered
+  uint8_t    _prevMode;           // OperatingMode saved before entering TEST
 
   // Auto-repeat for UP/DOWN in value editor
   uint32_t   _upDownPressStartMs; // millis() when UP/DOWN was pressed

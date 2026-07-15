@@ -8,7 +8,25 @@
  *    SD card on built-in microSD slot (BUILTIN_SDCARD)
  *    NativeEthernet for ArtNet + TCP
  *    OLED display (I2C) + 4 buttons
+ *
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  PIN ASSIGNMENTS                                           ║
+ *  ║  ¡Edita Pins.h si cambia el cableado!                     ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ *  NOTE: Pin 4 is ENET_RST (Ethernet PHY reset) — output #5 pin 8!
+ *  LED outputs 1- 8:   0,  1,  2,  3,  8,  5,  6,  7
+ *  LED outputs 9-16:   9, 10, 11, 12, 24, 25, 28, 29
+ *  Buttons:   RED=23  UP=22  DOWN=21  SELECT=20  BACK=19
+ *  OLED (I2C):    SDA=18  SCL=17  ADDR=0x3C
  */
+
+#include "Pins.h"
+
+// ledPins array — the actual pin numbers for 16 OctoWS2811 outputs.
+// Change these values if you rewire the LED strips.
+// NOTE: Pin 4 is ENET_RST (Ethernet PHY reset), so output #5 moved to pin 8.
+const uint8_t ledPins[16] = {0,  1,  2,  3,  8,  5,  6,  7,
+                             9,  10, 11, 12, 24, 25, 28, 29};
 
 #include "Config.h"
 #include "SDManager.h"
@@ -20,27 +38,9 @@
 #include "MenuManager.h"
 
 // ========================  WATCHDOG  =========================================
-// Teensy 4.1 (IMXRT1062) hardware watchdog via WDOG1.
-// Uses the internal low-frequency oscillator (~32 kHz) with 256 prescaler.
-// WT=255 → timeout ≈ 255 / (32768/256) ≈ 2.0 seconds.
-// Called every loop() iteration; any stall >2s triggers a hardware reset.
-
-static void watchdog_enable(void)
-{
-  // Feed to unlock the configuration register
-  WDOG1_WSR = 0x5555;
-  WDOG1_WSR = 0xAAAA;
-  // WCR: WDE=1 (enable), SRS=1 (assert reset), WDA=1 (allow updates),
-  //      WT=255 (max timeout ~2s at 32kHz/256 prescaler)
-  WDOG1_WCR = (1 << 0) | (1 << 4) | (1 << 5) | (255 << 8);
-}
-
-static inline void watchdog_feed(void)
-{
-  // Refresh sequence: write 0x5555 then 0xAAAA to the service register
-  WDOG1_WSR = 0x5555;
-  WDOG1_WSR = 0xAAAA;
-}
+// Watchdog functionality is now in Watchdog.h / Watchdog.cpp.
+// See that file for configuration and feeding.
+#include "Watchdog.h"
 
 // ========================  GLOBAL OBJECTS  ================================
 
@@ -118,36 +118,72 @@ void setup()
   delay(100);
   Serial.println("\n=== UzomaBox (16 outputs) ===");
 
-  // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) ------------
-  if (!sdInit()) {
-    Serial.println("FATAL: No SD card found");
-    while (1) {
-      watchdog_feed();
-      delay(1000);
+  // ========================  DIAGNOSTIC: BYPASS SD  ========================
+  #ifdef DIAG_NO_SD
+    Serial.println("DIAG: NO_SD mode – skipping SD init, using default config");
+    // Hardcoded default config (no SD needed)
+    g_config.ip = IPAddress(192, 168, 1, 100);
+    g_config.mac[0] = 0x04; g_config.mac[1] = 0xE9;
+    g_config.mac[2] = 0xE5; g_config.mac[3] = 0x00;
+    g_config.mac[4] = 0x00; g_config.mac[5] = 0x01;
+    g_config.ledWidth = 512;
+    g_config.colorOrder = ORDER_RGB;
+    g_config.mode = MODE_ARTNET;
+    g_config.recordFps = 30;
+    g_config.playbackSpeed = 1.0f;
+    strcpy(g_config.nickname, "UzomaBox");
+    for (int i = 0; i < NUM_OUTPUTS; i++) {
+      g_config.startUniverse[i] = 0;
+      g_config.outputActive[i] = true;
     }
-  }
-  Serial.println("SD card OK");
+    Serial.print("Output active (default): ");
+    for (int i = 0; i < NUM_OUTPUTS; i++) {
+      Serial.print("1");
+      if (i < NUM_OUTPUTS - 1) Serial.print(",");
+    }
+    Serial.println();
+    Serial.print("Mode: ");
+    Serial.println("ArtNet");
+    Serial.print("IP: ");   Serial.println(g_config.ip);
+    Serial.print("MAC: ");  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+                              g_config.mac[0], g_config.mac[1], g_config.mac[2],
+                              g_config.mac[3], g_config.mac[4], g_config.mac[5]);
+    Serial.print("LEDs/strip: "); Serial.println(g_config.ledWidth);
+  #else
+    // ---- Initialise SD card (Teensy 4.1 built-in microSD slot) ------------
+    if (!sdInit()) {
+      Serial.println("FATAL: No SD card found");
+      while (1) {
+        watchdog_feed();
+        delay(1000);
+      }
+    }
+    Serial.println("SD card OK");
 
-  // ---- Load / create config ---------------------------------------------
-  loadConfig(g_config);
-  Serial.print("Output active loaded: ");
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
-    Serial.print(g_config.outputActive[i] ? "1" : "0");
-    if (i < NUM_OUTPUTS - 1) Serial.print(",");
-  }
-  Serial.println();
-  Serial.print("Mode: ");
-  switch (g_config.mode) {
-    case MODE_ARTNET:   Serial.println("ArtNet");  break;
-    case MODE_PLAYBACK: Serial.println("Playback"); break;
-    case MODE_RECORD:   Serial.println("Record");   break;
-    case MODE_TEST:     Serial.println("Test");     break;
-  }
-  Serial.print("IP: ");   Serial.println(g_config.ip);
-  Serial.print("MAC: ");  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
-                            g_config.mac[0], g_config.mac[1], g_config.mac[2],
-                            g_config.mac[3], g_config.mac[4], g_config.mac[5]);
-  Serial.print("LEDs/strip: "); Serial.println(g_config.ledWidth);
+    // ---- Load / create config ---------------------------------------------
+    loadConfig(g_config);
+    Serial.print("Output active loaded: ");
+  #endif
+  // Continuation of serial prints regardless of DIAG_NO_SD
+  #ifndef DIAG_NO_SD
+    for (int i = 0; i < NUM_OUTPUTS; i++) {
+      Serial.print(g_config.outputActive[i] ? "1" : "0");
+      if (i < NUM_OUTPUTS - 1) Serial.print(",");
+    }
+    Serial.println();
+    Serial.print("Mode: ");
+    switch (g_config.mode) {
+      case MODE_ARTNET:   Serial.println("ArtNet");  break;
+      case MODE_PLAYBACK: Serial.println("Playback"); break;
+      case MODE_RECORD:   Serial.println("Record");   break;
+      case MODE_TEST:     Serial.println("Test");     break;
+    }
+    Serial.print("IP: ");   Serial.println(g_config.ip);
+    Serial.print("MAC: ");  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+                              g_config.mac[0], g_config.mac[1], g_config.mac[2],
+                              g_config.mac[3], g_config.mac[4], g_config.mac[5]);
+    Serial.print("LEDs/strip: "); Serial.println(g_config.ledWidth);
+  #endif
 
   // ---- Initialise LED controller (dual OctoWS2811) ------------------------
   g_leds.begin(g_config.ledWidth);
@@ -155,35 +191,38 @@ void setup()
   g_leds.show();
   Serial.println("LEDs OK (16 outputs)");
 
-  // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
-  Ethernet.begin(g_config.mac, g_config.ip);
-  Serial.print("Ethernet IP: ");
-  Serial.println(Ethernet.localIP());
-
-  // ---- Initialise ArtNet ------------------------------------------------
-  g_artNet.setLedsPerStrip(g_config.ledWidth);
-  g_artNet.setUniverseMapping(g_config.startUniverse);
-  g_artNet.setOutputActive(g_config.outputActive);
-  g_artNet.setFrameCallback(onArtNetFrame);
-  g_artNet.begin();
-
-  // ---- Initialise TCP server --------------------------------------------
-  g_tcp.begin();
-  Serial.println("TCP server on port 8888");
-
-  // ---- Initialise UDP discovery ------------------------------------------
-  g_discovery.begin();
-  Serial.println("UDP discovery on port 7777");
-
   // ---- Apply color order from config ------------------------------------
   g_leds.setColorOrder(g_config.colorOrder);
 
   // ---- Apply playback speed from config ---------------------------------
   g_playback.setSpeed(g_config.playbackSpeed);
 
-  // ---- Initialise OLED menu system ----------------------------------------
+  // ---- Initialise OLED menu system (before Ethernet — SSD1306 timeout) ----
   g_menu.begin();
   Serial.println("MenuManager OK");
+
+  // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
+  // Delay to allow capacitors to charge before Ethernet PHY power spike
+  delay(1000);
+  #ifndef DIAG_NO_ETHERNET
+    Ethernet.begin(g_config.mac, g_config.ip);
+    Serial.print("Ethernet IP: ");
+    Serial.println(Ethernet.localIP());
+    // ---- Initialise ArtNet ------------------------------------------------
+    g_artNet.setLedsPerStrip(g_config.ledWidth);
+    g_artNet.setUniverseMapping(g_config.startUniverse);
+    g_artNet.setOutputActive(g_config.outputActive);
+    g_artNet.setFrameCallback(onArtNetFrame);
+    g_artNet.begin();
+    // ---- Initialise TCP server --------------------------------------------
+    g_tcp.begin();
+    Serial.println("TCP server on port 8888");
+    // ---- Initialise UDP discovery ------------------------------------------
+    g_discovery.begin();
+    Serial.println("UDP discovery on port 7777");
+  #else
+    Serial.println("DIAG: NO_ETHERNET mode – Ethernet/ArtNet/TCP/UDP disabled");
+  #endif
 
   // ---- Set initial mode -------------------------------------------------
   g_mode = g_config.mode;
@@ -197,14 +236,30 @@ void setup()
   }
 
   Serial.println("=== Setup complete ===");
+  // Force first render after everything is initialised, before entering loop
+  g_menu.update();
+
+  // ---- DIAGNOSTIC: Force display ON with test pattern ----
+  // Draw every pixel white to confirm the OLED panel works
+  g_menu.markDirty();                     // force redraw next update
+  for (int i = 0; i < 10; i++) {
+    g_menu.update();
+    delay(10);
+  }
+  // If you see a flash, the display hardware works
+  // If not, the issue is physical (voltage/ripple/connections)
 }
 
 // ========================  LOOP  ==========================================
 
 void loop()
 {
-  // Feed the watchdog — if any operation hangs, board auto-reboots after 8s
+  // Feed the watchdog — if any operation hangs, board auto-reboots after ~16s
   watchdog_feed();
+
+  // Heartbeat: prints uptime every second via serial for diagnosis
+  // (disabled in normal mode; uncomment DIAG_HEARTBEAT in Watchdog.h)
+  watchdog_heartbeat();
 
   char cmdBuffer[CMD_BUFFER_SIZE];
   int  cmd = g_tcp.poll(cmdBuffer, sizeof(cmdBuffer));
@@ -257,16 +312,11 @@ void loop()
         uint16_t pixelCount  = 0;
 
         if (g_playback.playNextFrame(g_playbackBuffer, &frameTimeUs, &pixelCount)) {
-          // playNextFrame read pixel data directly into g_playbackBuffer
           uint16_t dataBytes = pixelCount * 3;
           uint16_t maxBytes  = g_leds.totalPixels() * 3;
 
           if (dataBytes > maxBytes) {
-            // File has more pixels — fill what fits, skip rest
             g_leds.fillFromBin(g_playbackBuffer, maxBytes);
-            // Need to skip excess data not consumed by playNextFrame.
-            // Since playNextFrame reads exactly dataBytes pixels,
-            // and we only use maxBytes of them, we skip the rest.
             g_leds.show();
           } else {
             g_leds.fillFromBin(g_playbackBuffer, dataBytes);

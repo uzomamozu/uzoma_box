@@ -1,4 +1,5 @@
 #include "LEDController.h"
+#include "Pins.h"
 #include <string.h>
 
 // ---------------------------------------------------------------------------
@@ -7,14 +8,6 @@
 // Adjust if you need more LEDs.
 // ---------------------------------------------------------------------------
 #define MAX_LEDS_PER_STRIP  512
-
-// ---------------------------------------------------------------------------
-// All 16 LED output pins in order: outputs 1-8 (default Octo group),
-// outputs 9-16 (second group).
-// Teensy 4.x OctoWS2811 accepts arbitrary pin lists via the constructor.
-// ---------------------------------------------------------------------------
-const uint8_t ledPins[16] = {2, 14, 7, 8, 6, 20, 21, 5,
-                             28, 29, 24, 25, 10, 11, 12, 4};
 
 // DMAMEM must be statically allocated on Teensy.
 // Single contiguous buffer for all 16 strips.

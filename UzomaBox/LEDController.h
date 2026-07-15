@@ -30,9 +30,6 @@ const char *colorOrderStr(ColorOrder order);
 // Number of LED strips (single OctoWS2811 with 16 pins = 16 outputs)
 #define NUM_STRIPS  16
 
-// All 16 pins in order: outputs 1-8 (first Octo half), outputs 9-16 (second Octo half)
-extern const uint8_t ledPins[16];
-
 class LEDController {
 public:
   LEDController();
