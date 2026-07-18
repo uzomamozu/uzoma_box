@@ -38,13 +38,21 @@ static inline const char* _(const char *en, const char *es) {
 
 // ========================  STATIC TEXT TABLES  ==============================
 
-static const char *MAIN_ITEMS[] = {
+static const char *MAIN_EN[] = {
   "Run Mode",
   "Play Files",
   "Record Cfg",
   "Settings",
   "Network",
   "Status"
+};
+static const char *MAIN_ES[] = {
+  "Modo Run",
+  "Repro Arch",
+  "Grabar Cfg",
+  "Ajustes",
+  "Red",
+  "Estado"
 };
 #define MAIN_COUNT  6
 
@@ -380,7 +388,7 @@ void MenuManager::_handleEvent(ButtonEvent ev)
         OperatingMode modes[] = { MODE_ARTNET, MODE_PLAYBACK, MODE_RECORD, MODE_TEST };
         if (_cursor >= 0 && _cursor < 4) {
           setMode(modes[_cursor]);
-          showStatusBrief(MAIN_ITEMS[_cursor]);
+          showStatusBrief(g_config.language ? MAIN_ES[_cursor] : MAIN_EN[_cursor]);
           _setScreen(SCREEN_HOME, 0);
         }
       } else if (ev == BTN_BACK) {
@@ -875,7 +883,7 @@ void MenuManager::_drawMainMenu()
       _display.print(" ");
     }
 
-    _display.print(MAIN_ITEMS[i]);
+    _display.print(g_config.language ? MAIN_ES[i] : MAIN_EN[i]);
     y += 9;
   }
 
