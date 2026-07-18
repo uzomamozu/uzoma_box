@@ -16,7 +16,10 @@
 //  5 buttons   –  active LOW with internal pull-up
 
 // ========================  LED OUTPUT STRIPS  ================================
-#define NUM_OUTPUTS  16
+// Change ACTIVE_OUTPUTS to 8 for the 8-output hardware variant before flashing.
+// MAX_OUTPUTS is fixed at 16 (physical hardware capacity) — do not change.
+#define ACTIVE_OUTPUTS  16     // ← change to 8 for 8-output version
+#define MAX_OUTPUTS     16     // physical maximum, never change
 
 // Teensy 4.1 OctoWS2811 pins (16 outputs in order):
 //   NOTE: Pin 4 is ENET_RST (Ethernet PHY reset) — output #5 uses pin 8 instead!
@@ -29,11 +32,11 @@ extern const uint8_t ledPins[16];
 #define PIN_BTN_UP      22
 #define PIN_BTN_DOWN    21
 #define PIN_BTN_SELECT  20
-#define PIN_BTN_BACK    19
+#define PIN_BTN_BACK    17
 
 // ========================  OLED DISPLAY (SSD1306, I2C)  ======================
 #define OLED_SDA        18   // Teensy 4.1 I2C0 SDA (Wire)
-#define OLED_SCL        17   // Teensy 4.1 I2C0 SCL (Wire)
+#define OLED_SCL        19   // Teensy 4.1 I2C0 SCL (Wire)
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT   64
 #define OLED_RESET      -1   // sin pin de reset

@@ -19,10 +19,10 @@ void configSetDefaults(AppConfig &cfg)
   strncpy(cfg.nickname, "UzomaBox", sizeof(cfg.nickname));
   cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
 
-  // Default start universes per strip: 0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
+  // Default start universes per strip: 0, 3, 6...
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
     cfg.startUniverse[i] = i * 3;
-    cfg.outputActive[i]  = true;
+    cfg.outputActive[i]  = (i < ACTIVE_OUTPUTS);
   }
 }
 
@@ -98,7 +98,7 @@ bool loadConfig(AppConfig &cfg)
     else if (!strcmp(key, "start_universe")) {
       int idx = 0;
       char *tok = strtok(value, ",");
-      while (tok && idx < NUM_OUTPUTS) {
+      while (tok && idx < MAX_OUTPUTS) {
         cfg.startUniverse[idx++] = (uint16_t)atoi(tok);
         tok = strtok(NULL, ",");
       }
@@ -106,7 +106,7 @@ bool loadConfig(AppConfig &cfg)
     else if (!strcmp(key, "output_active")) {
       int idx = 0;
       char *tok = strtok(value, ",");
-      while (tok && idx < NUM_OUTPUTS) {
+      while (tok && idx < MAX_OUTPUTS) {
         cfg.outputActive[idx++] = (atoi(tok) != 0);
         tok = strtok(NULL, ",");
       }
@@ -157,7 +157,7 @@ bool saveConfig(const AppConfig &cfg)
 
   // Start universes — snprintf with position tracking (bounds-safe)
   int pos = 0;
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
     pos += snprintf(buf + pos, sizeof(buf) - pos, "%s%u",
                     i > 0 ? "," : "", cfg.startUniverse[i]);
   }
@@ -165,7 +165,7 @@ bool saveConfig(const AppConfig &cfg)
 
   // Output active
   pos = 0;
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
     pos += snprintf(buf + pos, sizeof(buf) - pos, "%s%s",
                     i > 0 ? "," : "", cfg.outputActive[i] ? "1" : "0");
   }

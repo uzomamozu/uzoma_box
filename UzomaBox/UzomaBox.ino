@@ -133,14 +133,14 @@ void setup()
     g_config.recordFps = 30;
     g_config.playbackSpeed = 1.0f;
     strcpy(g_config.nickname, "UzomaBox");
-    for (int i = 0; i < NUM_OUTPUTS; i++) {
+    for (int i = 0; i < MAX_OUTPUTS; i++) {
       g_config.startUniverse[i] = 0;
-      g_config.outputActive[i] = true;
+      g_config.outputActive[i] = (i < ACTIVE_OUTPUTS);
     }
     Serial.print("Output active (default): ");
-    for (int i = 0; i < NUM_OUTPUTS; i++) {
+    for (int i = 0; i < ACTIVE_OUTPUTS; i++) {
       Serial.print("1");
-      if (i < NUM_OUTPUTS - 1) Serial.print(",");
+      if (i < ACTIVE_OUTPUTS - 1) Serial.print(",");
     }
     Serial.println();
     Serial.print("Mode: ");
@@ -167,9 +167,9 @@ void setup()
   #endif
   // Continuation of serial prints regardless of DIAG_NO_SD
   #ifndef DIAG_NO_SD
-    for (int i = 0; i < NUM_OUTPUTS; i++) {
+    for (int i = 0; i < ACTIVE_OUTPUTS; i++) {
       Serial.print(g_config.outputActive[i] ? "1" : "0");
-      if (i < NUM_OUTPUTS - 1) Serial.print(",");
+      if (i < ACTIVE_OUTPUTS - 1) Serial.print(",");
     }
     Serial.println();
     Serial.print("Mode: ");
@@ -259,11 +259,8 @@ void setup()
 
 void loop()
 {
-  // Feed the watchdog — if any operation hangs, board auto-reboots after ~16s
   watchdog_feed();
 
-  // Heartbeat: prints uptime every second via serial for diagnosis
-  // (disabled in normal mode; uncomment DIAG_HEARTBEAT in Watchdog.h)
   watchdog_heartbeat();
 
   char cmdBuffer[CMD_BUFFER_SIZE];
@@ -273,7 +270,6 @@ void loop()
     handleTcpCommand(cmd, cmdBuffer);
   }
 
-  // ---- Non-blocking IDENTIFY blink --------------------------------------
   if (g_identifyActive) {
     uint32_t now = millis();
     if (now - g_identifyLastToggle >= 200) {
@@ -281,7 +277,7 @@ void loop()
       g_identifyLedState = !g_identifyLedState;
       digitalWrite(LED_BUILTIN, g_identifyLedState);
       g_identifyBlinkCount++;
-      if (g_identifyBlinkCount >= 20) {  // 10 full blinks (20 toggles)
+      if (g_identifyBlinkCount >= 20) {
         g_identifyActive = false;
         digitalWrite(LED_BUILTIN, LOW);
         pinMode(LED_BUILTIN, INPUT);
@@ -289,56 +285,40 @@ void loop()
     }
   }
 
-  // ---- Poll UDP discovery (every loop — parsePacket is non-blocking) ----
   g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
                    Ethernet.localIP(), 0);
-
-  // ---- Mode-specific behaviour ------------------------------------------
 
   switch (g_mode) {
 
     case MODE_ARTNET:
-      // Poll for incoming ArtNet packets – the callback (onArtNetFrame)
-      // writes data to drawing memory without calling show().
       g_artNet.poll();
-
-      // Deferred show(): only call leds.show() when a full frame is ready
       if (g_artNet.isFrameReady()) {
         g_artNet.clearFrameReady();
         g_leds.show();
       }
-
-      // If recording is active, frames are captured in the callback
       break;
 
     case MODE_PLAYBACK:
       if (g_playback.isPlaying()) {
         uint32_t frameTimeUs = 0;
         uint16_t pixelCount  = 0;
-
         if (g_playback.playNextFrame(g_playbackBuffer, &frameTimeUs, &pixelCount)) {
           uint16_t dataBytes = pixelCount * 3;
           uint16_t maxBytes  = g_leds.totalPixels() * 3;
-
           if (dataBytes > maxBytes) {
             g_leds.fillFromBin(g_playbackBuffer, maxBytes);
-            g_leds.show();
           } else {
             g_leds.fillFromBin(g_playbackBuffer, dataBytes);
-            g_leds.show();
           }
+          g_leds.show();
         }
       } else {
-        delay(10);
+        delay(1);
       }
       break;
 
     case MODE_RECORD:
-      // In record mode, we poll ArtNet to see incoming data
-      // (the user triggers REC:START / REC:STOP via TCP)
       g_artNet.poll();
-
-      // Show LEDs during recording too
       if (g_artNet.isFrameReady()) {
         g_artNet.clearFrameReady();
         g_leds.show();
@@ -350,19 +330,15 @@ void loop()
       break;
   }
 
-  // ---- Incoming ArtNet FPS meter (kept for STATUS, no serial print) -----
   uint32_t now = millis();
   if (now - g_fpsLastPrint >= 1000) {
-    g_fpsDisplay = g_fpsFrames;   // capture stable value before reset
+    g_fpsDisplay = g_fpsFrames;
     g_fpsFrames = 0;
     g_fpsLastPrint = now;
   }
 
-  // ---- Poll OLED menu system (non-blocking) ------------------------------
   g_menu.update();
 
-  // ---- Small yield for watchdog / USB tasks -----------------------------
-  // On Teensy 4.1, delay(0) or yield() helps with background tasks.
   delay(0);
 }
 
@@ -370,30 +346,21 @@ void loop()
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  // Push to LED drawing memory – fillFrameDirect uses memcpy per strip
-  // show() is called later in loop() via g_artNet.isFrameReady()
   g_leds.fillFrameDirect(rgbData, totalPixels);
 
-  // ---- Recording trigger logic ------------------------------------------
-  // Start triggers (when armed)
   if (g_recArmed && !g_playback.isRecording()) {
     bool shouldStart = false;
     if (g_recStartMode == 0) {
-      shouldStart = true;  // Immediate
+      shouldStart = true;
     } else if (g_recStartMode == 1) {
-      // First non-zero: use pre-computed flag from ArtNetHandler (O(1))
       shouldStart = g_artNet.hasNonZeroPixels();
       if (shouldStart) {
         Serial.println("TRIGGER: First non-zero pixel detected, starting recording");
       }
     } else if (g_recStartMode == 2) {
-      // Channel change: monitor a specific DMX channel across universes.
-      // Map DMX (universe + ch) → pixel in assembled frame buffer:
-      //   Each universe = 512 DMX ch = 170 RGB pixels (512/3).
-      //   Only strip 0 is monitored (multi-strip not supported for triggers).
       uint32_t pxl = (uint32_t)g_recTrigUniv * 170 + (uint32_t)(g_recTrigCh / 3);
       if (pxl < totalPixels) {
-        uint8_t val = rgbData[pxl * 3];  // R byte of target pixel
+        uint8_t val = rgbData[pxl * 3];
         if (val != g_recLastTrigVal) {
           g_recLastTrigVal = val;
           shouldStart = true;
@@ -411,17 +378,11 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
     }
   }
 
-  // Write frame if recording is active
   if (g_playback.isRecording()) {
-    // Dedup: skip frame if it arrives within 15ms of the previous one.
-    // ArtNet's double-fire (timeout + _allUpdated) can trigger the
-    // callback twice for the same logical frame.
     uint32_t nowUs = micros();
     uint32_t sinceLast = (uint32_t)(nowUs - g_lastRecordUs);
     bool dedup = (g_lastRecordUs != 0 && sinceLast < 15000);
     if (!dedup) {
-      // Use real inter-frame timing for the stored frame.
-      // First frame uses the configured fps as default.
       uint32_t frameTimeUs;
       if (g_lastRecordUs == 0) {
         frameTimeUs = 1000000 / g_config.recordFps;
@@ -434,18 +395,14 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
       g_playback.writeFrame(rgbData, totalPixels, frameTimeUs);
     }
 
-    // Stop triggers (runs on every callback, even deduped)
     bool shouldStop = false;
     if (g_recStopMode == 0) {
-      // Immediate — only stop via REC:STOP command
     } else if (g_recStopMode == 1) {
-      // All zero: use pre-computed flag from ArtNetHandler (O(1))
       if (!g_artNet.hasNonZeroPixels()) {
         shouldStop = true;
         Serial.println("STOP TRIGGER: All pixels zero, stopping recording");
       }
     } else if (g_recStopMode == 2) {
-      // Timer: check elapsed seconds
       uint32_t elapsed = (millis() / 1000) - g_recStopStart;
       if (elapsed >= g_recStopSecs) {
         shouldStop = true;
@@ -504,7 +461,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
           g_tcp.sendResponse("ERR:could not start recording");
         }
       } else {
-        // Non-immediate start: arm and wait for ArtNet trigger
         g_recArmed = true;
         g_tcp.sendResponse("OK:armed, waiting for trigger");
         Serial.println("Recording armed, waiting for trigger");
@@ -520,7 +476,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_REC_START_MODE:
       {
-        int m = atoi(cmdStr + 15); // skip "REC:START_MODE="
+        int m = atoi(cmdStr + 15);
         if (m >= 0 && m <= 2) {
           g_recStartMode = (uint8_t)m;
           g_tcp.sendResponse("OK:start mode set");
@@ -532,7 +488,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_REC_STOP_MODE:
       {
-        int m = atoi(cmdStr + 14); // skip "REC:STOP_MODE="
+        int m = atoi(cmdStr + 14);
         if (m >= 0 && m <= 2) {
           g_recStopMode = (uint8_t)m;
           g_tcp.sendResponse("OK:stop mode set");
@@ -567,9 +523,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       break;
 
     case CMD_CONFIG: {
-      // cmdStr format: "CONFIG:key=value" or "CONFIG:key=val1,val2,..."
-      // Extract the config part after "CONFIG:"
-      const char *kv = cmdStr + 7;   // skip "CONFIG:"
+      const char *kv = cmdStr + 7;
       if (!strncmp(kv, "ip=", 3)) {
         IPAddress newIp; newIp.fromString(kv + 3);
         g_config.ip = newIp;
@@ -604,22 +558,21 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         int idx = 0;
         char val[128]; strncpy(val, kv + 15, 127); val[127] = 0;
         char *tok = strtok(val, ",");
-        while (tok && idx < NUM_OUTPUTS) {
+        while (tok && idx < MAX_OUTPUTS) {
           g_config.startUniverse[idx++] = (uint16_t)atoi(tok);
           tok = strtok(NULL, ",");
         }
         saveConfig(g_config);
         g_tcp.sendResponse("OK:start_universe saved");
-        // No reboot — next command will trigger it
       } else if (!strncmp(kv, "output_active=", 14)) {
         int idx = 0;
         char val[64]; strncpy(val, kv + 14, 63); val[63] = 0;
         char *tok = strtok(val, ",");
         Serial.print("output_active received: ");
-        while (tok && idx < NUM_OUTPUTS) {
+        while (tok && idx < MAX_OUTPUTS) {
           g_config.outputActive[idx++] = (atoi(tok) != 0);
           Serial.print(tok);
-          Serial.print(idx < NUM_OUTPUTS ? "," : "");
+          Serial.print(idx < MAX_OUTPUTS ? "," : "");
           tok = strtok(NULL, ",");
         }
         Serial.println();
@@ -627,7 +580,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
         Serial.println("saveConfig() done");
         g_artNet.setOutputActive(g_config.outputActive);
         g_tcp.sendResponse("OK:output_active saved (live)");
-        // No reboot — next command will trigger it
       } else if (!strncmp(kv, "color_order=", 12)) {
         ColorOrder order = parseColorOrder(kv + 12);
         g_config.colorOrder = order;
@@ -659,7 +611,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_PLAY_FILE: {
-      // cmdStr: "PLAY:filename.BIN"
       const char *fn = cmdStr + 5;
       if (g_playback.playFile(fn)) {
         g_mode = MODE_PLAYBACK;
@@ -682,7 +633,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_STOP:
-      // Only clear LEDs if we were in playback mode
       if (g_playback.isPlaying()) {
         g_leds.clear();
         g_leds.show();
@@ -692,7 +642,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       break;
 
     case CMD_SPEED: {
-      // cmdStr: "SPEED:1.5"
       float speed = atof(cmdStr + 6);
       if (speed >= 0.05f && speed <= 5.0f) {
         g_playback.setSpeed(speed);
@@ -707,7 +656,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_LIST: {
-      // List all .BIN files on SD card
       char names[64][16];
       int count = sdListBinFiles(names, 64);
       g_tcp.sendResponse("OK:LIST");
@@ -719,7 +667,6 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     }
 
     case CMD_DELETE: {
-      // cmdStr: "DELETE:filename.BIN"
       const char *fn = cmdStr + 7;
       if (sdFileDelete(fn)) {
         g_tcp.sendResponse("OK:deleted");
@@ -732,8 +679,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_TEST_PATTERN:
       {
-        int pat = atoi(cmdStr + 21); // skip "COMMAND:TEST_PATTERN="
-        Serial.printf("DEBUG: CMD_TEST_PATTERN parsed pat=%d from: %s\n", pat, cmdStr);
+        int pat = atoi(cmdStr + 21);
         if (pat >= 0 && pat <= 4) {
           g_testPattern = (uint8_t)pat;
           g_testStartMs = millis();
@@ -746,8 +692,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
     case CMD_TEST_OUTPUT:
       {
-        int out = atoi(cmdStr + 20); // skip "COMMAND:TEST_OUTPUT="
-        Serial.printf("DEBUG: CMD_TEST_OUTPUT parsed out=%d from: %s\n", out, cmdStr);
+        int out = atoi(cmdStr + 20);
         if (out == 255 || (out >= 0 && out <= 15)) {
           g_testOutput = (uint8_t)out;
           g_tcp.sendResponse("OK:test output set");
@@ -775,7 +720,7 @@ void handleTcpCommand(int cmd, const char *cmdStr)
     case CMD_NUM_OUTPUTS:
       {
         char reply[32];
-        snprintf(reply, sizeof(reply), "NUM_OUTPUTS=%d", NUM_OUTPUTS);
+        snprintf(reply, sizeof(reply), "OUTPUTS=%d,%d", ACTIVE_OUTPUTS, MAX_OUTPUTS);
         g_tcp.sendResponse(reply);
       }
       break;
@@ -797,19 +742,16 @@ void handleTcpCommand(int cmd, const char *cmdStr)
 
 void setMode(OperatingMode newMode)
 {
-  // Stop any ongoing activity
   g_playback.stop();
   g_leds.clear();
   g_leds.show();
 
   g_mode = newMode;
 
-  // Update and persist config
   g_config.mode = newMode;
   saveConfig(g_config);
 
   if (newMode == MODE_PLAYBACK) {
-    // Auto-start sequence
     int n = g_playback.playSequence();
     if (n == 0) {
       Serial.println("No .BIN files for playback");
@@ -829,18 +771,16 @@ void setMode(OperatingMode newMode)
 
 void printStatus()
 {
-  // Build comma-separated start_universe string (bounds-safe)
   char su[128];
   int pos = 0;
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
+  for (int i = 0; i < ACTIVE_OUTPUTS; i++) {
     pos += snprintf(su + pos, sizeof(su) - pos, "%s%u",
                     i > 0 ? "," : "", g_config.startUniverse[i]);
   }
 
-  // Build comma-separated output_active string
   char oa[64];
   pos = 0;
-  for (int i = 0; i < NUM_OUTPUTS; i++) {
+  for (int i = 0; i < ACTIVE_OUTPUTS; i++) {
     pos += snprintf(oa + pos, sizeof(oa) - pos, "%s%c",
                     i > 0 ? "," : "", g_config.outputActive[i] ? '1' : '0');
   }
@@ -886,7 +826,7 @@ void printStatus()
     (g_playback.isPlaying() ? g_playback.filePosition() : 0),
     (g_playback.isPlaying() ? g_playback.fileSize() : 0),
     oa,
-    NUM_OUTPUTS
+    ACTIVE_OUTPUTS
   );
   g_tcp.sendResponse(buf);
 }
@@ -900,15 +840,13 @@ void runTestAnimation()
   uint16_t totalPixels = g_leds.totalPixels();
 
   if (g_testPattern == 0) {
-    // Pattern 0: RGBW Cycle (R→G→B→W→R repeating, 1s per color)
-    uint32_t slot = (millis() - g_testStartMs) / 1000;  // 0,1,2,3,0,1,...
+    uint32_t slot = (millis() - g_testStartMs) / 1000;
     slot &= 3;
     if      (slot == 0) { r = 255; g = 0;   b = 0;   }
     else if (slot == 1) { r = 0;   g = 255; b = 0;   }
     else if (slot == 2) { r = 0;   g = 0;   b = 255; }
     else                { r = 255; g = 255; b = 255; }
   } else if (g_testPattern == 1) {
-    // Pattern 1: Color Fade (hue wheel, no white gaps, smooth)
     uint32_t elapsed = millis() - g_testStartMs;
     uint16_t hue = (elapsed * 85UL) / 1000UL;
     hue &= 0xFF;
@@ -930,19 +868,15 @@ void runTestAnimation()
     r = 0; g = 0; b = 255;
   }
 
-  // Build frame data in the playback buffer, then use fillFromBin
-  // This handles both Octo instances and respects color order
   uint8_t *buf = g_playbackBuffer;
 
   if (g_testOutput == 255) {
-    // All strips: fill entire buffer with the computed color
     for (uint16_t i = 0; i < totalPixels; i++) {
       buf[i*3 + 0] = r;
       buf[i*3 + 1] = g;
       buf[i*3 + 2] = b;
     }
   } else {
-    // Single strip: zero all, then fill only the target strip
     memset(buf, 0, totalPixels * 3);
     uint8_t s = g_testOutput;
     uint8_t *dst = buf + s * stripLen * 3;
@@ -953,7 +887,6 @@ void runTestAnimation()
     }
   }
 
-  // Use fillFromBin which handles both Octo instances and color ordering
   g_leds.fillFromBin(buf, totalPixels * 3);
   g_leds.show();
 }
@@ -962,8 +895,7 @@ void runTestAnimation()
 
 void rebootTeensy()
 {
-  // Teensy 4.1 system reset via ARM SCB_AIRCR register
   __disable_irq();
   SCB_AIRCR = 0x05FA0004;
-  while (1);  // wait for reset
+  while (1);
 }

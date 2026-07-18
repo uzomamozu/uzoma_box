@@ -66,11 +66,11 @@ const char *colorOrderStr(ColorOrder order)
 
 // ---------------------------------------------------------------------------
 LEDController::LEDController()
-  : _leds(MAX_LEDS_PER_STRIP, s_displayMemory, s_drawingMemory, WS2811_800kHz, NUM_STRIPS, ledPins)
+  : _leds(MAX_LEDS_PER_STRIP, s_displayMemory, s_drawingMemory, WS2811_800kHz, MAX_OUTPUTS, ledPins)
   , _ledsPerStrip(0)
   , _colorOrder(ORDER_RGB)
 {
-  for (int i = 0; i < NUM_STRIPS; i++) _outputActive[i] = true;
+  for (int i = 0; i < MAX_OUTPUTS; i++) _outputActive[i] = (i < ACTIVE_OUTPUTS);
 }
 
 LEDController::~LEDController()
@@ -87,7 +87,7 @@ void LEDController::begin(uint16_t ledsPerStrip)
 
   // Initialise OctoWS2811 with all 16 pins
   // Must use the full-parameter begin() to set the custom pin list
-  _leds.begin(MAX_LEDS_PER_STRIP, s_displayMemory, s_drawingMemory, WS2811_800kHz, NUM_STRIPS, ledPins);
+  _leds.begin(MAX_LEDS_PER_STRIP, s_displayMemory, s_drawingMemory, WS2811_800kHz, MAX_OUTPUTS, ledPins);
   _leds.show();
 
   // All black initially
@@ -104,7 +104,7 @@ void LEDController::show()
 // ---------------------------------------------------------------------------
 void LEDController::setPixel(uint8_t strip, uint16_t index, uint8_t r, uint8_t g, uint8_t b)
 {
-  if (strip >= NUM_STRIPS) return;
+  if (strip >= MAX_OUTPUTS) return;
   if (index >= _ledsPerStrip) return;
   if (!_outputActive[strip]) return;
 
@@ -123,13 +123,13 @@ void LEDController::setPixel(uint8_t strip, uint16_t index, uint8_t r, uint8_t g
 // ---------------------------------------------------------------------------
 void LEDController::fillFrame(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  // totalPixels = number of pixels across all 16 strips = ledsPerStrip * 16
-  uint16_t stripPixels = totalPixels / NUM_STRIPS;
+  // totalPixels = number of pixels across all active strips
+  uint16_t stripPixels = totalPixels / ACTIVE_OUTPUTS;
   if (stripPixels > _ledsPerStrip) stripPixels = _ledsPerStrip;
 
   const uint8_t *perm = colorOrderPerm[_colorOrder];
 
-  for (uint8_t s = 0; s < NUM_STRIPS; s++) {
+  for (uint8_t s = 0; s < ACTIVE_OUTPUTS; s++) {
     if (!_outputActive[s]) continue;
 
     const uint8_t *src = rgbData + s * stripPixels * 3;
@@ -147,18 +147,17 @@ void LEDController::fillFrame(const uint8_t *rgbData, uint16_t totalPixels)
 // ---------------------------------------------------------------------------
 void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels)
 {
-  uint16_t stripPixels = totalPixels / NUM_STRIPS;
+  uint16_t stripPixels = totalPixels / ACTIVE_OUTPUTS;
   if (stripPixels > _ledsPerStrip) stripPixels = _ledsPerStrip;
   uint16_t stripBytes = stripPixels * 3;
 
   // OctoWS2811 drawing memory is a uint8_t buffer, 3 bytes per pixel,
-  // arranged strip-major. For ORDER_RGB the byte layout matches the
-  // source exactly, so we can memcpy whole strips.
+  // arranged strip-major.
   uint8_t *draw = (uint8_t *)s_drawingMemory;
 
   // Fast path for ORDER_RGB: single memcpy per active strip
   if (_colorOrder == ORDER_RGB) {
-    for (uint8_t s = 0; s < NUM_STRIPS; s++) {
+    for (uint8_t s = 0; s < ACTIVE_OUTPUTS; s++) {
       uint8_t *dst = draw + s * _ledsPerStrip * 3;
       if (_outputActive[s]) {
         memcpy(dst, rgbData + s * stripBytes, stripBytes);
@@ -171,7 +170,7 @@ void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels
 
   // Fast path for ORDER_BGR: swap R↔B per pixel, 3 bytes per pixel
   if (_colorOrder == ORDER_BGR) {
-    for (uint8_t s = 0; s < NUM_STRIPS; s++) {
+    for (uint8_t s = 0; s < ACTIVE_OUTPUTS; s++) {
       uint8_t *dst = draw + s * _ledsPerStrip * 3;
       if (!_outputActive[s]) {
         memset(dst, 0, _ledsPerStrip * 3);
@@ -183,7 +182,6 @@ void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels
         dst[i*3 + 1] = src[i*3 + 1];  // G
         dst[i*3 + 2] = src[i*3 + 0];  // R
       }
-      // Zero-fill remaining LEDs in this strip (if stripPixels < _ledsPerStrip)
       memset(dst + stripBytes, 0, (_ledsPerStrip - stripPixels) * 3);
     }
     return;
@@ -191,7 +189,7 @@ void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels
 
   // Fallback for all other color orders: use permutation lookup
   const uint8_t *perm = colorOrderPerm[_colorOrder];
-  for (uint8_t s = 0; s < NUM_STRIPS; s++) {
+  for (uint8_t s = 0; s < ACTIVE_OUTPUTS; s++) {
     uint8_t *dst = draw + s * _ledsPerStrip * 3;
     if (!_outputActive[s]) {
       memset(dst, 0, _ledsPerStrip * 3);
@@ -210,17 +208,14 @@ void LEDController::fillFrameDirect(const uint8_t *rgbData, uint16_t totalPixels
 // ---------------------------------------------------------------------------
 void LEDController::fillFromBin(const uint8_t *data, uint16_t len)
 {
-  // memcpy-based optimisation: copy raw bytes directly into drawing memory
-  uint16_t maxBytes = _ledsPerStrip * NUM_STRIPS * 3;
+  uint16_t maxBytes = _ledsPerStrip * ACTIVE_OUTPUTS * 3;
   if (len > maxBytes) len = maxBytes;
   uint16_t pixelCount = len / 3;
-  if (pixelCount > _ledsPerStrip * NUM_STRIPS) pixelCount = _ledsPerStrip * NUM_STRIPS;
+  if (pixelCount > _ledsPerStrip * ACTIVE_OUTPUTS) pixelCount = _ledsPerStrip * ACTIVE_OUTPUTS;
   uint8_t *draw = (uint8_t *)s_drawingMemory;
 
   if (_colorOrder == ORDER_RGB) {
-    // Source and destination layouts are identical → single memcpy
     memcpy(draw, data, pixelCount * 3);
-    // Zero-fill remaining
     if (pixelCount * 3 < maxBytes) {
       memset(draw + pixelCount * 3, 0, maxBytes - pixelCount * 3);
     }
@@ -229,9 +224,9 @@ void LEDController::fillFromBin(const uint8_t *data, uint16_t len)
 
   if (_colorOrder == ORDER_BGR) {
     for (uint16_t i = 0; i < pixelCount; i++) {
-      draw[i*3 + 0] = data[i*3 + 2];  // B
-      draw[i*3 + 1] = data[i*3 + 1];  // G
-      draw[i*3 + 2] = data[i*3 + 0];  // R
+      draw[i*3 + 0] = data[i*3 + 2];
+      draw[i*3 + 1] = data[i*3 + 1];
+      draw[i*3 + 2] = data[i*3 + 0];
     }
     if (pixelCount * 3 < maxBytes) {
       memset(draw + pixelCount * 3, 0, maxBytes - pixelCount * 3);
@@ -253,8 +248,7 @@ void LEDController::fillFromBin(const uint8_t *data, uint16_t len)
 // ---------------------------------------------------------------------------
 void LEDController::clear()
 {
-  // Fast memset of entire drawing buffer instead of per-pixel setPixel loop
-  memset((uint8_t *)s_drawingMemory, 0, MAX_LEDS_PER_STRIP * NUM_STRIPS * 3);
+  memset((uint8_t *)s_drawingMemory, 0, MAX_LEDS_PER_STRIP * MAX_OUTPUTS * 3);
 }
 
 // ---------------------------------------------------------------------------

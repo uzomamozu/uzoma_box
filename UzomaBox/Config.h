@@ -23,8 +23,8 @@ struct AppConfig {
   IPAddress ip;
   uint8_t mac[6];
   uint16_t ledWidth;
-  uint16_t startUniverse[NUM_OUTPUTS];
-  bool outputActive[NUM_OUTPUTS];
+  uint16_t startUniverse[MAX_OUTPUTS];
+  bool outputActive[MAX_OUTPUTS];
   ColorOrder colorOrder;
   float playbackSpeed;                     // 0.05 – 5.0
   uint16_t recordFps;                      // Recording FPS (5-60)

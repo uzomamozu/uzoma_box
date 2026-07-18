@@ -27,9 +27,6 @@ ColorOrder parseColorOrder(const char *str);
 // Convert a ColorOrder enum to its string representation (e.g. "grb")
 const char *colorOrderStr(ColorOrder order);
 
-// Number of LED strips (single OctoWS2811 with 16 pins = 16 outputs)
-#define NUM_STRIPS  16
-
 class LEDController {
 public:
   LEDController();
@@ -70,8 +67,8 @@ public:
   uint8_t *getDrawingMemory();
   uint16_t getLedsPerStrip() const { return _ledsPerStrip; }
 
-  // Total pixels across all 16 strips
-  uint16_t totalPixels() const { return _ledsPerStrip * NUM_STRIPS; }
+  // Total pixels across all active strips
+  uint16_t totalPixels() const { return _ledsPerStrip * ACTIVE_OUTPUTS; }
 
   // ---- Color order ----
   void setColorOrder(ColorOrder order) { _colorOrder = order; }
@@ -82,7 +79,7 @@ private:
   OctoWS2811  _leds;
 
   uint16_t    _ledsPerStrip;
-  bool        _outputActive[NUM_STRIPS];   // 16 strips
+  bool        _outputActive[MAX_OUTPUTS];   // 16 strips max
   ColorOrder  _colorOrder;
 };
 

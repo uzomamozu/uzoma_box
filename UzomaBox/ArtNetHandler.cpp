@@ -11,7 +11,7 @@ DMAMEM uint8_t ArtNetHandler::s_frameBuffer[FRAME_BUFFER_SIZE];
 // ---------------------------------------------------------------------------
 ArtNetHandler::ArtNetHandler()
   : _ledsPerStrip(512)
-  , _totalPixels(512 * 16)
+  , _totalPixels(512 * ACTIVE_OUTPUTS)
   , _receiving(false)
   , _lastPacketTime(0)
   , _universesPerStrip(3)
@@ -228,7 +228,7 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   uint8_t ups = _universesPerStrip;
 
   // Find which strip and which sub-universe this universe belongs to
-  for (uint8_t strip = 0; strip < 16; strip++) {
+  for (uint8_t strip = 0; strip < MAX_OUTPUTS; strip++) {
     uint16_t base = _startUniverse[strip];
     for (uint8_t sub = 0; sub < ups; sub++) {
       if (universe == base + sub) {
