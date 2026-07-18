@@ -30,6 +30,12 @@ extern uint32_t           g_fpsDisplay;
 extern void setMode(OperatingMode newMode);
 extern void rebootTeensy();
 
+// ========================  I18N HELPER  =====================================
+// Simple inline: if language=1 returns Spanish, otherwise English.
+static inline const char* _(const char *en, const char *es) {
+  return (g_config.language == 1) ? es : en;
+}
+
 // ========================  STATIC TEXT TABLES  ==============================
 
 static const char *MAIN_ITEMS[] = {
@@ -524,7 +530,7 @@ void MenuManager::_handleEvent(ButtonEvent ev)
       if (ev == BTN_UP) {
         if (_cursor > 0) { _cursor--; _dirty = true; }
       } else if (ev == BTN_DOWN) {
-        if (_cursor < 3) { _cursor++; _dirty = true; }
+        if (_cursor < 4) { _cursor++; _dirty = true; }
       } else if (ev == BTN_OK) {
         if (_cursor == 0) {  // Color order
           _setScreen(SCREEN_COLOR_ORDER, g_config.colorOrder);
@@ -552,6 +558,10 @@ void MenuManager::_handleEvent(ButtonEvent ev)
           strcpy(_editLabel, "Record FPS");
           _idleOverride = true;
           _setScreen(SCREEN_EDIT_VALUE, 0);
+        } else if (_cursor == 4) {  // Language toggle
+          g_config.language = !g_config.language;
+          saveConfig(g_config);
+          _dirty = true;
         }
       } else if (ev == BTN_BACK) {
         _returnToMain();
@@ -1134,22 +1144,23 @@ void MenuManager::_drawRecordTrigger()
 
 void MenuManager::_drawSettings()
 {
-  static const char *items[] = {
-    "Color Order",
-    "LEDs/strip",
-    "Playback Spd",
-    "Record FPS"
+  static const char *itemsEN[] = {
+    "Color Order", "LEDs/strip", "Playback Spd", "Record FPS", "Language"
   };
-  #define SET_COUNT 4
+  static const char *itemsES[] = {
+    "Orden Color", "LEDs/tira", "Veloc. Reprod", "FPS Grab", "Idioma"
+  };
+  #define SET_COUNT 5
 
   _display.setTextSize(1);
 
   _display.fillRect(0, 0, 128, 9, SSD1306_WHITE);
   _display.setTextColor(SSD1306_BLACK);
   _display.setCursor(2, 0);
-  _display.print("SETTINGS");
+  _display.print(_("SETTINGS", "AJUSTES"));
   _display.setTextColor(SSD1306_WHITE);
 
+  const char *const *items = g_config.language ? itemsES : itemsEN;
   int8_t y = 11;
   for (int8_t i = 0; i < SET_COUNT; i++) {
     if (i == _cursor) {
@@ -1160,14 +1171,20 @@ void MenuManager::_drawSettings()
     }
     _display.setCursor(2, y);
     _display.print(i == _cursor ? ">" : " ");
-    _display.print(items[i]);
+    if (i == 4) {
+      // Show current language value
+      _display.print(g_config.language ? "Espa" "\xF1" "ol" : "English");
+    } else {
+      _display.print(items[i]);
+    }
     y += 9;
   }
 
   // Show current values
   y = 14 + SET_COUNT * 9;
   _display.setCursor(2, y);
-  _display.print("Color: ");
+  _display.print(_("Color:", "Color:"));
+  _display.print(" ");
   _display.print(colorOrderStr(g_config.colorOrder));
 }
 

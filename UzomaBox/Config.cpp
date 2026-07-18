@@ -8,6 +8,7 @@
 void configSetDefaults(AppConfig &cfg)
 {
   cfg.mode            = MODE_ARTNET;
+  cfg.language        = 0;   // English by default
   cfg.ip              = IPAddress(192, 168, 0, 211);
   cfg.mac[0]          = 0xDE; cfg.mac[1] = 0xAD;
   cfg.mac[2]          = 0xBE; cfg.mac[3] = 0xEF;
@@ -130,6 +131,10 @@ bool loadConfig(AppConfig &cfg)
       strncpy(cfg.nickname, value, sizeof(cfg.nickname) - 1);
       cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
     }
+    else if (!strcmp(key, "language")) {
+      if (!strcmp(value, "es")) cfg.language = 1;
+      else                      cfg.language = 0;
+    }
   }
 
   sdFileClose();
@@ -175,6 +180,7 @@ bool saveConfig(const AppConfig &cfg)
   sdFilePrintf("playback_speed=%.2f\n", cfg.playbackSpeed);
   sdFilePrintf("record_fps=%u\n", cfg.recordFps);
   sdFilePrintf("nickname=%s\n", cfg.nickname);
+  sdFilePrintf("language=%s\n", cfg.language ? "es" : "en");
 
   sdFileClose();
   return true;
