@@ -19,7 +19,7 @@
 // #define DIAG_NO_SD
 // #define DIAG_NO_SHOW
 // #define DIAG_NO_ETHERNET
-#define DIAG_HEARTBEAT
+// #define DIAG_HEARTBEAT
 
 // ========================  HEARTBEAT (optional, for diagnosis)  ==============
 static uint32_t g_watchdogLastHeartbeat = 0;
