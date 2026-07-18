@@ -33,6 +33,7 @@ static OperatingMode parseMode(const char *str)
 {
   if (!strcmp(str, "playback")) return MODE_PLAYBACK;
   if (!strcmp(str, "record"))   return MODE_RECORD;
+  if (!strcmp(str, "test"))     return MODE_TEST;
   return MODE_ARTNET;
 }
 
@@ -45,6 +46,7 @@ static const char *modeStr(OperatingMode m)
     case MODE_ARTNET:   return "artnet";
     case MODE_PLAYBACK: return "playback";
     case MODE_RECORD:   return "record";
+    case MODE_TEST:     return "test";
     default:            return "artnet";
   }
 }
