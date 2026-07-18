@@ -382,10 +382,13 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
         Serial.println("TRIGGER: First non-zero pixel detected, starting recording");
       }
     } else if (g_recStartMode == 2) {
-      // Channel change: check specific universe/channel
-      uint16_t pixelIdx = g_recTrigUniv * 512 + g_recTrigCh;
-      if (pixelIdx < totalPixels * 3) {
-        uint8_t val = rgbData[pixelIdx];
+      // Channel change: monitor a specific DMX channel across universes.
+      // Map DMX (universe + ch) → pixel in assembled frame buffer:
+      //   Each universe = 512 DMX ch = 170 RGB pixels (512/3).
+      //   Only strip 0 is monitored (multi-strip not supported for triggers).
+      uint32_t pxl = (uint32_t)g_recTrigUniv * 170 + (uint32_t)(g_recTrigCh / 3);
+      if (pxl < totalPixels) {
+        uint8_t val = rgbData[pxl * 3];  // R byte of target pixel
         if (val != g_recLastTrigVal) {
           g_recLastTrigVal = val;
           shouldStart = true;
