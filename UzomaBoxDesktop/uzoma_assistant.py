@@ -198,9 +198,17 @@ class DeviceConfigWindow:
         self._start_univ_dirty = []
         self._color_order_dirty = False
         self._output_active_dirty = False
+        # Recording breath animation
         self._breath_active = False
         self._breath_val = 0.0
         self._breath_after_id = None
+        # Playback breath animation
+        self._pb_breath_active = False
+        self._pb_breath_val = 0.0
+        self._pb_breath_after_id = None
+        # Pending mode — prevents poll from undoing immediate UI feedback
+        self._pending_mode = None  # None, "playback", or "record"
+        self._pending_mode_count = 0  # number of times we ignored stale mode data
 
         self._tcp = TcpClientPersistent(self.ip, timeout=3.0)
         try:
@@ -208,9 +216,10 @@ class DeviceConfigWindow:
             # Query the firmware for its actual output count
             lines = self._tcp.send_and_recv("NUM_OUTPUTS?")
             for line in lines:
-                if line.startswith("NUM_OUTPUTS="):
+                if line.startswith("OUTPUTS="):
                     try:
-                        self._num_outputs = int(line.split("=", 1)[1].strip())
+                        parts = line.split("=", 1)[1].strip().split(",")
+                        self._num_outputs = int(parts[0])  # active outputs
                     except (ValueError, IndexError):
                         pass
                     break
@@ -455,8 +464,50 @@ class DeviceConfigWindow:
         self._cmd_send("MODE:artnet")
         self.status_var.set("Switched to ArtNet mode")
         self.log("ArtNet mode activated on %s" % self.ip)
+        # Clear pending mode so poll can reset UI
+        self._pending_mode = None
 
     # ---- Playback / Record Tab (Tab 4) ----
+    def _set_record_widgets_state(self, enabled):
+        """Enable/disable all recording controls."""
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.rec_fps_spin.config(state=state)
+        self.rec_start_btn.config(state=state)
+        self.rec_stop_btn.config(state=state)
+        self.rec_start_mode_combo.config(state="readonly" if enabled else tk.DISABLED)
+        self.rec_trig_univ_spin.config(state=state)
+        self.rec_trig_ch_spin.config(state=state)
+        self.rec_stop_mode_combo.config(state="readonly" if enabled else tk.DISABLED)
+        self.rec_stop_secs_spin.config(state=state)
+        self.rec_reboot_btn.config(state=state)
+
+    def _set_playback_widgets_state(self, enabled):
+        """Enable/disable all playback controls.
+        
+        Play button is only enabled if a file is selected in the list.
+        Play All is only enabled if the file list is not empty.
+        """
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.play_file_entry.config(state=state)
+        self.stop_btn.config(state=state)
+        self.file_listbox.config(state=state)
+        self.refresh_list_btn.config(state=state)
+        self.delete_file_btn.config(state=state)
+        self.speed_scale.config(state=state)
+        self.speed_set_btn.config(state=state)
+        
+        # Play: only enabled if section is enabled AND file selected
+        if enabled and self.play_file_var.get().strip():
+            self.play_btn.config(state=tk.NORMAL)
+        else:
+            self.play_btn.config(state=tk.DISABLED)
+        
+        # Play All: only enabled if section is enabled AND list not empty
+        if enabled and len(self._file_list) > 0:
+            self.play_all_btn.config(state=tk.NORMAL)
+        else:
+            self.play_all_btn.config(state=tk.DISABLED)
+
     def _build_playback_record_tab(self):
         frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(frame, text="Playback/Record")
@@ -469,19 +520,21 @@ class DeviceConfigWindow:
         self.record_mode_btn = ttk.Button(mode_frame, text="● Record Mode", command=self._start_record, width=16)
         self.record_mode_btn.pack(side=tk.LEFT)
 
+        # ============================================================
         # Recording controls
-        rec_frame = tk.LabelFrame(frame, text="Recording", padx=6, pady=6,
-                                  font=("TkDefaultFont", 9, "bold"))
-        rec_frame.pack(fill=tk.X, pady=(0,8))
-        self.rec_frame = rec_frame
+        # ============================================================
+        self.rec_frame = tk.LabelFrame(frame, text="Recording", padx=6, pady=6,
+                                       font=("TkDefaultFont", 9, "bold"))
+        self.rec_frame.pack(fill=tk.X, pady=(0,8))
+        self._rec_frame_default_bg = self.rec_frame.cget("background")
 
         # Row 0: FPS and buttons
-        row0 = ttk.Frame(rec_frame)
+        row0 = ttk.Frame(self.rec_frame)
         row0.pack(fill=tk.X, pady=(0,4))
         ttk.Label(row0, text="FPS:").pack(side=tk.LEFT, padx=(0,4))
         self.record_fps_var = tk.StringVar(value="30")
-        ttk.Spinbox(row0, from_=5, to=60, textvariable=self.record_fps_var, width=6
-                    ).pack(side=tk.LEFT, padx=(0,4))
+        self.rec_fps_spin = ttk.Spinbox(row0, from_=5, to=60, textvariable=self.record_fps_var, width=6)
+        self.rec_fps_spin.pack(side=tk.LEFT, padx=(0,4))
         self.rec_start_btn = ttk.Button(row0, text="▶ Start", command=self._rec_start)
         self.rec_start_btn.pack(side=tk.LEFT, padx=(0,4))
         self.rec_stop_btn = ttk.Button(row0, text="■ Stop", command=self._rec_stop, state=tk.DISABLED)
@@ -490,10 +543,11 @@ class DeviceConfigWindow:
         ttk.Label(row0, textvariable=self.rec_status_var).pack(side=tk.LEFT, padx=(4,0))
         self.rec_timer_var = tk.StringVar(value="")
         ttk.Label(row0, textvariable=self.rec_timer_var, width=10).pack(side=tk.LEFT)
-        ttk.Button(row0, text="OK & Reboot", command=self._save_record_fps).pack(side=tk.RIGHT)
+        self.rec_reboot_btn = ttk.Button(row0, text="OK & Reboot", command=self._save_record_fps)
+        self.rec_reboot_btn.pack(side=tk.RIGHT)
 
         # Row 1: Start trigger
-        row1 = ttk.Frame(rec_frame)
+        row1 = ttk.Frame(self.rec_frame)
         row1.pack(fill=tk.X, pady=(0,4))
         ttk.Label(row1, text="Start:").pack(side=tk.LEFT, padx=(0,4))
         self.rec_start_mode_var = tk.StringVar(value="Immediate")
@@ -504,42 +558,47 @@ class DeviceConfigWindow:
         self.rec_start_mode_combo.bind("<<ComboboxSelected>>", lambda e: self._on_rec_trigger_change())
         ttk.Label(row1, text="Univ:").pack(side=tk.LEFT, padx=(4,2))
         self.rec_trig_univ_var = tk.StringVar(value="0")
-        ttk.Spinbox(row1, from_=0, to=255, textvariable=self.rec_trig_univ_var, width=5
-                    ).pack(side=tk.LEFT, padx=(0,4))
+        self.rec_trig_univ_spin = ttk.Spinbox(row1, from_=0, to=255, textvariable=self.rec_trig_univ_var, width=5)
+        self.rec_trig_univ_spin.pack(side=tk.LEFT, padx=(0,4))
         ttk.Label(row1, text="Ch:").pack(side=tk.LEFT, padx=(0,2))
         self.rec_trig_ch_var = tk.StringVar(value="0")
-        ttk.Spinbox(row1, from_=0, to=511, textvariable=self.rec_trig_ch_var, width=5
-                    ).pack(side=tk.LEFT, padx=(0,4))
-        self._rec_show_trig_fields()
+        self.rec_trig_ch_spin = ttk.Spinbox(row1, from_=0, to=511, textvariable=self.rec_trig_ch_var, width=5)
+        self.rec_trig_ch_spin.pack(side=tk.LEFT, padx=(0,4))
 
         # Row 2: Stop trigger
-        row2 = ttk.Frame(rec_frame)
+        row2 = ttk.Frame(self.rec_frame)
         row2.pack(fill=tk.X, pady=(0,4))
         ttk.Label(row2, text="Stop:").pack(side=tk.LEFT, padx=(0,4))
         self.rec_stop_mode_var = tk.StringVar(value="Immediate")
         stop_modes = ["Immediate", "All Zero", "Timer"]
         self.rec_stop_mode_combo = ttk.Combobox(row2, textvariable=self.rec_stop_mode_var,
-                                                 values=stop_modes, width=16, state="readonly")
+                                                  values=stop_modes, width=16, state="readonly")
         self.rec_stop_mode_combo.pack(side=tk.LEFT, padx=(0,4))
         self.rec_stop_mode_combo.bind("<<ComboboxSelected>>", lambda e: self._on_rec_trigger_change())
         ttk.Label(row2, text="Secs:").pack(side=tk.LEFT, padx=(4,2))
         self.rec_stop_secs_var = tk.StringVar(value="5")
-        ttk.Spinbox(row2, from_=1, to=999, textvariable=self.rec_stop_secs_var, width=5
-                    ).pack(side=tk.LEFT, padx=(0,4))
-        self._rec_show_stop_fields()
+        self.rec_stop_secs_spin = ttk.Spinbox(row2, from_=1, to=999, textvariable=self.rec_stop_secs_var, width=5)
+        self.rec_stop_secs_spin.pack(side=tk.LEFT, padx=(0,4))
 
+        # ============================================================
         # Playback controls
-        pb_frame = ttk.LabelFrame(frame, text="Playback", padding=6)
-        pb_frame.pack(fill=tk.X, pady=(0,8))
-        file_frame = ttk.Frame(pb_frame)
+        # ============================================================
+        self.pb_frame = tk.LabelFrame(frame, text="Playback", padx=6, pady=6,
+                                      font=("TkDefaultFont", 9, "bold"))
+        self.pb_frame.pack(fill=tk.X, pady=(0,8))
+        self._pb_frame_default_bg = self.pb_frame.cget("background")
+        file_frame = ttk.Frame(self.pb_frame)
         file_frame.pack(fill=tk.X, pady=(0,4))
         ttk.Label(file_frame, text="File:").pack(side=tk.LEFT, padx=(0,4))
         self.play_file_var = tk.StringVar()
-        ttk.Entry(file_frame, textvariable=self.play_file_var, width=22).pack(side=tk.LEFT, padx=(0,4))
-        ttk.Button(file_frame, text="▶ Play", command=self._play_file, width=8).pack(side=tk.LEFT, padx=(0,4))
-        ttk.Button(file_frame, text="■ Stop", command=self._stop, width=8).pack(side=tk.LEFT)
+        self.play_file_entry = ttk.Entry(file_frame, textvariable=self.play_file_var, width=22)
+        self.play_file_entry.pack(side=tk.LEFT, padx=(0,4))
+        self.play_btn = ttk.Button(file_frame, text="▶ Play", command=self._play_file, width=8)
+        self.play_btn.pack(side=tk.LEFT, padx=(0,4))
+        self.stop_btn = ttk.Button(file_frame, text="■ Stop", command=self._stop, width=8)
+        self.stop_btn.pack(side=tk.LEFT)
 
-        list_frame = ttk.Frame(pb_frame)
+        list_frame = ttk.Frame(self.pb_frame)
         list_frame.pack(fill=tk.X, pady=(0,4))
         self.file_listbox = tk.Listbox(list_frame, height=4, font=("Consolas", 9))
         file_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.file_listbox.yview)
@@ -547,22 +606,26 @@ class DeviceConfigWindow:
         self.file_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
         file_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.file_listbox.bind("<<ListboxSelect>>", self._on_file_select)
-        btn_row = ttk.Frame(pb_frame)
+        btn_row = ttk.Frame(self.pb_frame)
         btn_row.pack(fill=tk.X, pady=(4,0))
-        ttk.Button(btn_row, text="Refresh List", command=self._refresh_list).pack(side=tk.LEFT, padx=(0,4))
-        ttk.Button(btn_row, text="Play All", command=self._play_all).pack(side=tk.LEFT, padx=(0,4))
-        ttk.Button(btn_row, text="Delete Selected", command=self._delete_file).pack(side=tk.LEFT)
+        self.refresh_list_btn = ttk.Button(btn_row, text="Refresh List", command=self._refresh_list)
+        self.refresh_list_btn.pack(side=tk.LEFT, padx=(0,4))
+        self.play_all_btn = ttk.Button(btn_row, text="Play All", command=self._play_all)
+        self.play_all_btn.pack(side=tk.LEFT, padx=(0,4))
+        self.delete_file_btn = ttk.Button(btn_row, text="Delete Selected", command=self._delete_file)
+        self.delete_file_btn.pack(side=tk.LEFT)
 
-        speed_frame = ttk.Frame(pb_frame)
+        speed_frame = ttk.Frame(self.pb_frame)
         speed_frame.pack(fill=tk.X, pady=(4,0))
         ttk.Label(speed_frame, text="Speed:").pack(side=tk.LEFT, padx=(0,4))
         self.speed_var = tk.DoubleVar(value=1.0)
-        speed_scale = ttk.Scale(speed_frame, from_=0.2, to=2.0, orient=tk.HORIZONTAL,
-                                 variable=self.speed_var, command=self._on_speed_change, length=150)
-        speed_scale.pack(side=tk.LEFT, padx=(0,4))
+        self.speed_scale = ttk.Scale(speed_frame, from_=0.2, to=2.0, orient=tk.HORIZONTAL,
+                                      variable=self.speed_var, command=self._on_speed_change, length=150)
+        self.speed_scale.pack(side=tk.LEFT, padx=(0,4))
         self.speed_label_var = tk.StringVar(value="1.00x")
         ttk.Label(speed_frame, textvariable=self.speed_label_var, width=8).pack(side=tk.LEFT, padx=(0,4))
-        ttk.Button(speed_frame, text="Set", command=self._set_speed, width=6).pack(side=tk.LEFT)
+        self.speed_set_btn = ttk.Button(speed_frame, text="Set", command=self._set_speed, width=6)
+        self.speed_set_btn.pack(side=tk.LEFT)
 
         # Progress bar
         progress_frame = ttk.Frame(frame)
@@ -714,14 +777,46 @@ class DeviceConfigWindow:
         self.win.destroy()
 
     def _start_playback(self):
-        self._cmd_send("PLAY:SEQUENCE")
+        print("DEBUG _start_playback CALLED")
+        self._pending_mode = "playback"
+        self._pending_mode_count = 0
+        # Only send MODE:playback — user must select a file and press Play later
+        self._cmd_send("MODE:playback")
         self.status_var.set("Switched to Playback mode")
         self.log("Playback mode on %s" % self.ip)
+        # --- Immediate UI feedback (don't wait for poll) ---
+        self._stop_rec_breathing()
+        print("DEBUG _start_playback: calling _set_playback_widgets_state(True)")
+        self._set_playback_widgets_state(True)
+        print("DEBUG _start_playback: calling _set_record_widgets_state(False)")
+        self._set_record_widgets_state(False)
+        print("DEBUG _start_playback: pb_breath_active=%s has_pb_frame=%s" %
+              (self._pb_breath_active, hasattr(self, 'pb_frame')))
+        # Refresh file list to update Play All state
+        self._refresh_list()
+        if not self._pb_breath_active and hasattr(self, 'pb_frame'):
+            self._pb_breath_active = True
+            self._pb_breath_val = 0.0
+            self._breathe_animate_pb()
 
     def _start_record(self):
+        print("DEBUG _start_record CALLED")
+        self._pending_mode = "record"
         self._cmd_send("MODE:record")
         self.status_var.set("Switched to Record mode")
         self.log("Record mode on %s" % self.ip)
+        # --- Immediate UI feedback (don't wait for poll) ---
+        self._stop_pb_breathing()
+        print("DEBUG _start_record: calling _set_record_widgets_state(True)")
+        self._set_record_widgets_state(True)
+        print("DEBUG _start_record: calling _set_playback_widgets_state(False)")
+        self._set_playback_widgets_state(False)
+        print("DEBUG _start_record: breath_active=%s has_rec_frame=%s" %
+              (self._breath_active, hasattr(self, 'rec_frame')))
+        if not self._breath_active and hasattr(self, 'rec_frame'):
+            self._breath_active = True
+            self._breath_val = 0.0
+            self._breathe_animate()
 
     def _save_record_fps(self):
         fps = self.record_fps_var.get().strip()
@@ -742,7 +837,7 @@ class DeviceConfigWindow:
         pass
 
     def _rec_start(self):
-        # Send trigger mode config before starting
+        # Send trigger mode config before starting (use send_only to avoid timeout)
         mode_map = {"Immediate": "0", "First Non-Zero": "1", "Channel Change": "2"}
         start_mode = mode_map.get(self.rec_start_mode_var.get(), "0")
         self._cmd_send("REC:START_MODE=%s" % start_mode)
@@ -789,10 +884,8 @@ class DeviceConfigWindow:
         self.log("Play all on %s" % self.ip)
 
     def _stop(self):
+        """Stop playback only — does NOT affect recording state."""
         self._cmd_send("STOP")
-        self.rec_start_btn.config(state=tk.NORMAL)
-        self.rec_stop_btn.config(state=tk.DISABLED)
-        self.rec_status_var.set("Idle")
         self.log("Stop on %s" % self.ip)
 
     def _on_speed_change(self, *args):
@@ -819,11 +912,19 @@ class DeviceConfigWindow:
         self.file_listbox.delete(0, tk.END)
         for fn in self._file_list:
             self.file_listbox.insert(tk.END, fn)
+        # Update Play All state based on list
+        if len(self._file_list) > 0:
+            self.play_all_btn.config(state=tk.NORMAL)
+        else:
+            self.play_all_btn.config(state=tk.DISABLED)
 
     def _on_file_select(self, event):
         sel = self.file_listbox.curselection()
         if sel and sel[0] < len(self._file_list):
             self.play_file_var.set(self._file_list[sel[0]])
+            self.play_btn.config(state=tk.NORMAL)
+        else:
+            self.play_btn.config(state=tk.DISABLED)
 
     def _delete_file(self):
         sel = self.file_listbox.curselection()
@@ -891,24 +992,63 @@ class DeviceConfigWindow:
                 pass
         elif k == "mode":
             self.mode_var = tk.StringVar(value=v)
-            if v.lower() == "record":
+            mode_lower = v.lower()
+            if mode_lower == "record":
+                # Ignore stale poll responses while waiting for a different mode
+                if self._pending_mode is not None and self._pending_mode != "record":
+                    self._pending_mode_count += 1
+                    if self._pending_mode_count < 30:  # ~3 seconds timeout
+                        print("DEBUG poll: ignoring stale mode=record, pending=%s (#%d)" % (self._pending_mode, self._pending_mode_count))
+                        return
+                    else:
+                        print("DEBUG poll: TIMEOUT — force reset from stale mode=record")
+                        self._pending_mode = None
+                        self._pending_mode_count = 0
+                        # Fall through to process it anyway
+                # Clear pending mode
+                self._pending_mode = None
+                # Stop PB breathing if active
+                self._stop_pb_breathing()
+                # Enable recording widgets, disable playback widgets
+                self._set_record_widgets_state(True)
+                self._set_playback_widgets_state(False)
+                # Start record breathing animation
                 if not self._breath_active and hasattr(self, 'rec_frame'):
                     self._breath_active = True
                     self._breath_val = 0.0
                     self._breathe_animate()
+            elif mode_lower == "playback":
+                # Ignore stale poll responses while waiting for a different mode
+                if self._pending_mode is not None and self._pending_mode != "playback":
+                    self._pending_mode_count += 1
+                    if self._pending_mode_count < 30:  # ~3 seconds timeout
+                        print("DEBUG poll: ignoring stale mode=playback, pending=%s (#%d)" % (self._pending_mode, self._pending_mode_count))
+                        return
+                    else:
+                        print("DEBUG poll: TIMEOUT — force reset from stale mode=playback")
+                        self._pending_mode = None
+                        self._pending_mode_count = 0
+                        # Fall through to process it anyway
+                # Clear pending mode
+                self._pending_mode = None
+                # Stop record breathing if active
+                self._stop_rec_breathing()
+                # Enable playback widgets, disable recording widgets
+                self._set_playback_widgets_state(True)
+                self._set_record_widgets_state(False)
+                # Start playback breathing animation
+                if not self._pb_breath_active and hasattr(self, 'pb_frame'):
+                    self._pb_breath_active = True
+                    self._pb_breath_val = 0.0
+                    self._breathe_animate_pb()
             else:
-                if self._breath_active:
-                    self._breath_active = False
-                    if self._breath_after_id:
-                        try:
-                            self.win.after_cancel(self._breath_after_id)
-                        except:
-                            pass
-                        self._breath_after_id = None
-                    try:
-                        self.rec_frame.configure(background='')
-                    except:
-                        pass
+                # Only reset UI if no pending mode — otherwise buttons just undid our work
+                if self._pending_mode is None:
+                    # Any other mode (artnet, test, etc.): enable both, stop animations
+                    self._stop_rec_breathing()
+                    self._stop_pb_breathing()
+                    self._set_record_widgets_state(True)
+                    self._set_playback_widgets_state(True)
         elif k == "recording":
             if v.lower() == "yes":
                 self.rec_status_var.set("Recording...")
@@ -996,6 +1136,38 @@ class DeviceConfigWindow:
         self._conn_indicator.delete("all")
         self._conn_indicator.create_oval(1, 1, 13, 13, fill="red", outline="black")
 
+    def _stop_rec_breathing(self):
+        """Stop recording breathing animation. Restore original background color."""
+        if self._breath_active:
+            print("DEBUG _stop_rec_breathing: stopping rec animation")
+            self._breath_active = False
+            if self._breath_after_id:
+                try:
+                    self.win.after_cancel(self._breath_after_id)
+                except:
+                    pass
+                self._breath_after_id = None
+            try:
+                self.rec_frame.configure(background=self._rec_frame_default_bg)
+            except:
+                pass
+
+    def _stop_pb_breathing(self):
+        """Stop playback breathing animation. Restore original background color."""
+        if self._pb_breath_active:
+            print("DEBUG _stop_pb_breathing: STOPPING pb animation")
+            self._pb_breath_active = False
+            if self._pb_breath_after_id:
+                try:
+                    self.win.after_cancel(self._pb_breath_after_id)
+                except:
+                    pass
+                self._pb_breath_after_id = None
+            try:
+                self.pb_frame.configure(background=self._pb_frame_default_bg)
+            except:
+                pass
+
     def _breathe_animate(self):
         """Animate the recording frame background with a breathing gray pulse."""
         if not self._breath_active or not hasattr(self, 'rec_frame'):
@@ -1012,6 +1184,22 @@ class DeviceConfigWindow:
             pass
         self._breath_after_id = self.win.after(50, self._breathe_animate)
 
+    def _breathe_animate_pb(self):
+        """Animate the playback frame background with a breathing gray pulse."""
+        if not self._pb_breath_active or not hasattr(self, 'pb_frame'):
+            return
+        import math
+        self._pb_breath_val += 0.08
+        # Sine from 0 to π, mapping to gray range 100-155
+        phase = (math.sin(self._pb_breath_val) + 1.0) / 2.0  # 0..1
+        gray = int(100 + phase * 55)
+        hex_color = '#%02x%02x%02x' % (gray, gray, gray)
+        try:
+            self.pb_frame.configure(background=hex_color)
+        except tk.TclError:
+            pass
+        self._pb_breath_after_id = self.win.after(50, self._breathe_animate_pb)
+
     def on_close(self):
         if self.after_id:
             try:
@@ -1021,6 +1209,11 @@ class DeviceConfigWindow:
         if self._breath_after_id:
             try:
                 self.win.after_cancel(self._breath_after_id)
+            except:
+                pass
+        if self._pb_breath_after_id:
+            try:
+                self.win.after_cancel(self._pb_breath_after_id)
             except:
                 pass
         self._tcp.close()
