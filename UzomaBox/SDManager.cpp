@@ -9,6 +9,11 @@ static uint8_t  g_buf[SD_BUFFER_SIZE];
 static unsigned int g_bufPos = 0;
 static unsigned int g_bufLen = 0;
 
+// Buffered line reading state (used by sdFileReadLine)
+static uint8_t  g_lineBuf[512];
+static uint16_t g_lineBufPos = 0;
+static uint16_t g_lineBufLen = 0;
+
 // ---- Buffered read ---------------------------------------------------------
 bool sdCardRead(void *ptr, unsigned int len)
 {
@@ -55,6 +60,7 @@ bool sdFileOpen(const char *filename, int mode)
   g_file = SD.open(filename, mode);
   g_opened = (g_file != 0);
   g_bufPos = g_bufLen = 0;
+  g_lineBufPos = g_lineBufLen = 0;
   return g_opened;
 }
 
@@ -68,18 +74,23 @@ void sdFileClose(void)
   g_bufPos = g_bufLen = 0;
 }
 
-// ---- Line read (for CONFIG.TXT) -------------------------------------------
+// ---- Line read (for CONFIG.TXT) -- buffered via g_lineBuf ------------------
 bool sdFileReadLine(char *buf, unsigned int bufSize)
 {
   if (!g_opened) return false;
 
-  int c;
   unsigned int pos = 0;
   while (pos < bufSize - 1) {
-    c = g_file.read();
-    if (c < 0) break;               // EOF
+    // Refill line buffer if exhausted
+    if (g_lineBufPos >= g_lineBufLen) {
+      int n = g_file.read(g_lineBuf, sizeof(g_lineBuf));
+      if (n <= 0) break;               // EOF
+      g_lineBufLen = (uint16_t)n;
+      g_lineBufPos = 0;
+    }
+    uint8_t c = g_lineBuf[g_lineBufPos++];
+    if (c == '\n') break;              // end-of-line
     buf[pos++] = (char)c;
-    if (c == '\n') break;           // end-of-line
   }
   buf[pos] = 0;
   return (pos > 0);
