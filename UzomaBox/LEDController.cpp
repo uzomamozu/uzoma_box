@@ -253,9 +253,8 @@ void LEDController::fillFromBin(const uint8_t *data, uint16_t len)
 // ---------------------------------------------------------------------------
 void LEDController::clear()
 {
-  for (uint16_t i = 0; i < _ledsPerStrip * NUM_STRIPS; i++) {
-    _leds.setPixel(i, 0, 0, 0);
-  }
+  // Fast memset of entire drawing buffer instead of per-pixel setPixel loop
+  memset((uint8_t *)s_drawingMemory, 0, MAX_LEDS_PER_STRIP * NUM_STRIPS * 3);
 }
 
 // ---------------------------------------------------------------------------
