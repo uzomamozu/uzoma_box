@@ -485,10 +485,38 @@ void MenuManager::_handleEvent(ButtonEvent ev)
 
     // ==================== RECORD TRIGGER ====================
     case SCREEN_REC_TRIGGER:
-      if (ev == BTN_BACK) {
+      if (ev == BTN_UP) {
+        if (_cursor > 0) { _cursor--; _dirty = true; }
+      } else if (ev == BTN_DOWN) {
+        if (_cursor < 3) { _cursor++; _dirty = true; }
+      } else if (ev == BTN_OK) {
+        switch (_cursor) {
+          case 0: // Start mode: cycle 0→1→2→0
+            g_recStartMode = (g_recStartMode + 1) % 3;
+            _dirty = true;
+            break;
+          case 1: // Stop mode: cycle 0→1→2→0
+            g_recStopMode = (g_recStopMode + 1) % 3;
+            _dirty = true;
+            break;
+          case 2: // Trigger universe
+            _editValue = g_recTrigUniv;
+            _editMin = 0; _editMax = 32767; _editStep = 1;
+            strcpy(_editLabel, "Trigger Univ");
+            _idleOverride = true;
+            _setScreen(SCREEN_EDIT_VALUE, 0);
+            break;
+          case 3: // Trigger channel
+            _editValue = g_recTrigCh;
+            _editMin = 0; _editMax = 511; _editStep = 1;
+            strcpy(_editLabel, "Trigger Ch");
+            _idleOverride = true;
+            _setScreen(SCREEN_EDIT_VALUE, 0);
+            break;
+        }
+      } else if (ev == BTN_BACK) {
         _setScreen(SCREEN_RECORD, 2);
       }
-      // Simplified — just show current trigger config, BACK exits
       break;
 
     // ==================== SETTINGS ====================
@@ -663,6 +691,12 @@ void MenuManager::_saveEditValue()
     g_config.ledWidth = (uint16_t)_editValue;
     saveConfig(g_config);
     showStatusBrief("Reboot to apply");
+  } else if (strcmp(_editLabel, "Trigger Univ") == 0) {
+    g_recTrigUniv = (uint16_t)_editValue;
+    showStatusBrief("Univ saved");
+  } else if (strcmp(_editLabel, "Trigger Ch") == 0) {
+    g_recTrigCh = (uint16_t)_editValue;
+    showStatusBrief("Ch saved");
   }
 }
 
@@ -1064,23 +1098,33 @@ void MenuManager::_drawRecordTrigger()
   _display.print("TRIGGERS");
   _display.setTextColor(SSD1306_WHITE);
 
-  _display.setCursor(2, 14);
-  _display.print("Start: ");
-  _display.print(g_recStartMode == 0 ? "Immediate" :
-                  g_recStartMode == 1 ? "Non-zero" : "Channel");
+  static const char *startLabels[] = { "Immediate", "Non-zero", "Channel" };
+  static const char *stopLabels[]  = { "Manual",    "All zero", "Timer" };
 
-  _display.setCursor(2, 24);
-  _display.print("Stop: ");
-  _display.print(g_recStopMode == 0 ? "Manual" :
-                  g_recStopMode == 1 ? "All zero" : "Timer");
+  struct TrigItem { int8_t y; const char *label; const char *value; };
+  TrigItem items[4];
+  items[0] = { 14, "Start", startLabels[g_recStartMode] };
+  items[1] = { 24, "Stop",  stopLabels[g_recStopMode]  };
 
-  _display.setCursor(2, 34);
-  _display.print("Univ: ");
-  _display.print(g_recTrigUniv);
+  char univStr[8], chStr[8];
+  snprintf(univStr, sizeof(univStr), "%u", g_recTrigUniv);
+  snprintf(chStr,   sizeof(chStr),   "%u", g_recTrigCh);
+  items[2] = { 34, "Univ", univStr };
+  items[3] = { 44, "Ch",   chStr   };
 
-  _display.setCursor(2, 44);
-  _display.print("Ch: ");
-  _display.print(g_recTrigCh);
+  for (int8_t i = 0; i < 4; i++) {
+    if (i == _cursor) {
+      _display.fillRect(0, items[i].y, 128, 9, SSD1306_WHITE);
+      _display.setTextColor(SSD1306_BLACK);
+    } else {
+      _display.setTextColor(SSD1306_WHITE);
+    }
+    _display.setCursor(2, items[i].y);
+    _display.print(i == _cursor ? ">" : " ");
+    _display.print(items[i].label);
+    _display.print(": ");
+    _display.print(items[i].value);
+  }
 
   _display.setCursor(2, 56);
   _display.print("BACK=exit");
