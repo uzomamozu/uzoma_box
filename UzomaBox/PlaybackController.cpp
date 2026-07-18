@@ -85,6 +85,11 @@ bool PlaybackController::playNextFrame(uint8_t *dest, uint32_t *frameTimeUs, uin
       if (!sdCardRead(extra, extraLen)) { sdFileClose(); stop(); return false; }
 
       uint16_t pixCount = extra[0] | (extra[1] << 8);
+      // Validate pixCount to prevent buffer overflow with corrupt files
+      // pixCount * 3 (pixel data) + BIN_FRAME_HEADER_LEN_V2 must fit in _pendingBuf
+      if (pixCount == 0 || pixCount > ((MAX_FRAME_SIZE - BIN_FRAME_HEADER_LEN_V2) / 3)) {
+        sdFileClose(); stop(); return false;
+      }
       uint32_t frameTime;
       if (typeByte == BIN_HEADER_VIDEO)
         frameTime = extra[2] | (extra[3] << 8);
