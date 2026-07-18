@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <NativeEthernet.h>
 #include <NativeEthernetUdp.h>
+#include "Pins.h"
 
 // ArtNet constants
 #define ARTNET_PORT         6454

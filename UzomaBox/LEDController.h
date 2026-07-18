@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <OctoWS2811.h>
+#include "Pins.h"
 
 // Supported RGB color orders for the LEDs
 // Maps incoming byte triplets to the physical LED ordering.
