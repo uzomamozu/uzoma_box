@@ -116,6 +116,7 @@ void setup()
 
   Serial.begin(115200);
   delay(100);
+  watchdog_feed();  // reset WDT counter right after enabling + Serial init
   Serial.println("\n=== UzomaBox (16 outputs) ===");
 
   // ========================  DIAGNOSTIC: BYPASS SD  ========================
@@ -184,6 +185,7 @@ void setup()
                               g_config.mac[3], g_config.mac[4], g_config.mac[5]);
     Serial.print("LEDs/strip: "); Serial.println(g_config.ledWidth);
   #endif
+  watchdog_feed();  // after config load (SD I/O can take >1s)
 
   // ---- Initialise LED controller (dual OctoWS2811) ------------------------
   g_leds.begin(g_config.ledWidth);
@@ -201,9 +203,12 @@ void setup()
   g_menu.begin();
   Serial.println("MenuManager OK");
 
+  watchdog_feed();  // before 1s PHY delay
+
   // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
   // Delay to allow capacitors to charge before Ethernet PHY power spike
   delay(1000);
+  watchdog_feed();  // after 1s PHY delay
   #ifndef DIAG_NO_ETHERNET
     Ethernet.begin(g_config.mac, g_config.ip);
     Serial.print("Ethernet IP: ");
