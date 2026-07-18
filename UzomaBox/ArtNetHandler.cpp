@@ -99,6 +99,7 @@ void ArtNetHandler::resetFrameState()
   _frameStartTime = 0;
   _syncReceived   = false;
   _waitingForSync = false;
+  _hasNonZeroPixels = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,16 @@ void ArtNetHandler::resetFrameState()
 // and signals that show() should be called from main loop.
 void ArtNetHandler::flushFrame()
 {
+  // Scan once to determine if this frame has any non-zero pixel
+  _hasNonZeroPixels = false;
+  uint32_t totalBytes = _totalPixels * 3;
+  for (uint32_t i = 0; i < totalBytes; i++) {
+    if (s_frameBuffer[i]) {
+      _hasNonZeroPixels = true;
+      break;
+    }
+  }
+
   if (_frameCb) {
     _frameCb(s_frameBuffer, _totalPixels);
   }

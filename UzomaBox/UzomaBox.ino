@@ -376,13 +376,10 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
     if (g_recStartMode == 0) {
       shouldStart = true;  // Immediate
     } else if (g_recStartMode == 1) {
-      // First non-zero: check if any pixel has data > 0
-      for (uint16_t i = 0; i < totalPixels * 3; i++) {
-        if (rgbData[i] != 0) {
-          shouldStart = true;
-          Serial.println("TRIGGER: First non-zero pixel detected, starting recording");
-          break;
-        }
+      // First non-zero: use pre-computed flag from ArtNetHandler (O(1))
+      shouldStart = g_artNet.hasNonZeroPixels();
+      if (shouldStart) {
+        Serial.println("TRIGGER: First non-zero pixel detected, starting recording");
       }
     } else if (g_recStartMode == 2) {
       // Channel change: check specific universe/channel
@@ -434,15 +431,8 @@ void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels)
     if (g_recStopMode == 0) {
       // Immediate — only stop via REC:STOP command
     } else if (g_recStopMode == 1) {
-      // All zero: check if every pixel is 0
-      bool allZero = true;
-      for (uint16_t i = 0; i < totalPixels * 3; i++) {
-        if (rgbData[i] != 0) {
-          allZero = false;
-          break;
-        }
-      }
-      if (allZero) {
+      // All zero: use pre-computed flag from ArtNetHandler (O(1))
+      if (!g_artNet.hasNonZeroPixels()) {
         shouldStop = true;
         Serial.println("STOP TRIGGER: All pixels zero, stopping recording");
       }

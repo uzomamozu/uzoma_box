@@ -71,6 +71,9 @@ public:
   // Set which outputs are physically active (skips disabled strips in frame assembly)
   void setOutputActive(const bool active[16]);
 
+  // True when the last flushed frame has at least one non-zero pixel (O(1))
+  bool hasNonZeroPixels() const { return _hasNonZeroPixels; }
+
 private:
   // Static DMAMEM frame buffer — no heap allocation
   // Shared across all instances; only one ArtNetHandler should exist.
@@ -103,6 +106,9 @@ private:
   uint8_t       _universesPerStrip;
 
   FrameCallback _frameCb;
+
+  // True when s_frameBuffer has at least one non-zero pixel (computed in flushFrame)
+  bool          _hasNonZeroPixels;
 
   // Per-frame assembly tracking
   bool          _universeReceived[16];            // true when strip has all sub-universes
