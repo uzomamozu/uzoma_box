@@ -211,6 +211,9 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   // ---- Handle ArtDMX (0x5000) ----
   if (opCode != ARTNET_OP_DMX) return;
 
+  // Validate protocol version (Art-Net 4 = 0x000E big-endian at bytes 10-11)
+  if (packet[10] != 0x00 || packet[11] != 0x0E) return;
+
   // ArtDMX requires at least header (18) + 1 DMX byte
   if (len < ARTNET_HEADER_LEN + 1) return;
 
