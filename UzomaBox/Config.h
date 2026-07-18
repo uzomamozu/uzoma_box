@@ -29,6 +29,7 @@ struct AppConfig {
   float playbackSpeed;                     // 0.05 – 5.0
   uint16_t recordFps;                      // Recording FPS (5-60)
   char nickname[32];                       // User-assignable device name
+  char lastPlayFile[32];                   // Last .BIN played (resume after reboot)
   uint8_t language;                        // 0 = English, 1 = Español
 };
 

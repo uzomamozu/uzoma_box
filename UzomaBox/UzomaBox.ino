@@ -232,11 +232,21 @@ void setup()
   // ---- Set initial mode -------------------------------------------------
   g_mode = g_config.mode;
   if (g_mode == MODE_PLAYBACK) {
-    int n = g_playback.playSequence();
-    Serial.printf("Playback: %d .BIN files found\n", n);
-    if (n == 0) {
-      Serial.println("No .BIN files found – switching to ArtNet");
-      g_mode = MODE_ARTNET;
+    // Resume last file if available, otherwise play sequence
+    if (strlen(g_config.lastPlayFile) > 0) {
+      Serial.printf("Resuming: %s\n", g_config.lastPlayFile);
+      if (!g_playback.playFile(g_config.lastPlayFile)) {
+        Serial.println("Resume file not found – playing sequence");
+        int n = g_playback.playSequence();
+        if (n == 0) g_mode = MODE_ARTNET;
+      }
+    } else {
+      int n = g_playback.playSequence();
+      Serial.printf("Playback: %d .BIN files found\n", n);
+      if (n == 0) {
+        Serial.println("No .BIN files found – switching to ArtNet");
+        g_mode = MODE_ARTNET;
+      }
     }
   }
 
@@ -614,6 +624,9 @@ void handleTcpCommand(int cmd, const char *cmdStr)
       const char *fn = cmdStr + 5;
       if (g_playback.playFile(fn)) {
         g_mode = MODE_PLAYBACK;
+        strncpy(g_config.lastPlayFile, fn, sizeof(g_config.lastPlayFile) - 1);
+        g_config.lastPlayFile[sizeof(g_config.lastPlayFile) - 1] = 0;
+        saveConfig(g_config);
         g_tcp.sendResponse("OK:playing file");
       } else {
         g_tcp.sendResponse("ERR:could not open file");

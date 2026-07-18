@@ -19,6 +19,7 @@ void configSetDefaults(AppConfig &cfg)
   cfg.recordFps       = 30;
   strncpy(cfg.nickname, "UzomaBox", sizeof(cfg.nickname));
   cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
+  cfg.lastPlayFile[0] = 0;                 // no resume file by default
 
   // Default start universes per strip: 0, 3, 6...
   for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -135,6 +136,10 @@ bool loadConfig(AppConfig &cfg)
       if (!strcmp(value, "es")) cfg.language = 1;
       else                      cfg.language = 0;
     }
+    else if (!strcmp(key, "last_play_file")) {
+      strncpy(cfg.lastPlayFile, value, sizeof(cfg.lastPlayFile) - 1);
+      cfg.lastPlayFile[sizeof(cfg.lastPlayFile) - 1] = 0;
+    }
   }
 
   sdFileClose();
@@ -181,6 +186,8 @@ bool saveConfig(const AppConfig &cfg)
   sdFilePrintf("record_fps=%u\n", cfg.recordFps);
   sdFilePrintf("nickname=%s\n", cfg.nickname);
   sdFilePrintf("language=%s\n", cfg.language ? "es" : "en");
+  if (cfg.lastPlayFile[0])
+    sdFilePrintf("last_play_file=%s\n", cfg.lastPlayFile);
 
   sdFileClose();
   return true;

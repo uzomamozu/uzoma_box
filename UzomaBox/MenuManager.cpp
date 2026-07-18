@@ -446,6 +446,9 @@ void MenuManager::_handleEvent(ButtonEvent ev)
           if (count > 0 && _cursor >= 0 && _cursor < count) {
             if (g_playback.playFile(names[_cursor])) {
               g_mode = MODE_PLAYBACK;
+              strncpy(g_config.lastPlayFile, names[_cursor], sizeof(g_config.lastPlayFile) - 1);
+              g_config.lastPlayFile[sizeof(g_config.lastPlayFile) - 1] = 0;
+              saveConfig(g_config);
               showStatusBrief("Now playing");
             } else {
               showStatusBrief("Cannot open");
