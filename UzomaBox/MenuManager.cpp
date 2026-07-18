@@ -785,6 +785,17 @@ void MenuManager::_drawHome()
     _display.setCursor(0, 36);
     _display.print("File: ");
     _display.print(g_playback.currentFilename());
+
+    // Progress bar (thin 4px) using file position / file size
+    uint32_t pos  = g_playback.filePosition();
+    uint32_t size = g_playback.fileSize();
+    if (size > 0) {
+      int16_t barW = (int16_t)((uint64_t)pos * 120 / size);
+      _display.drawRect(2, 48, 124, 4, SSD1306_WHITE);
+      if (barW > 0) {
+        _display.fillRect(3, 49, barW, 2, SSD1306_WHITE);
+      }
+    }
   }
 
   // Hint at bottom
