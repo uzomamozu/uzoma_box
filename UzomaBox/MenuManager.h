@@ -134,8 +134,9 @@ private:
   void _drawStatusBar();       // thin top bar showing mode icon + nickname
   void _drawScrollIndicators(int8_t total, int8_t visible);
 
-  // ---- Helpers ----
-  void _setScreen(MenuScreen s, int8_t cursor);
+   // ---- Helpers ----
+   void _drawIcon(uint8_t x, uint8_t y, char type);
+   void _setScreen(MenuScreen s, int8_t cursor);
   void _returnToMain();
   void _saveEditValue();
   void _rebootApply();

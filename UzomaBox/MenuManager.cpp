@@ -33,9 +33,9 @@ extern void rebootTeensy();
 // ========================  STATIC TEXT TABLES  ==============================
 
 static const char *MAIN_ITEMS[] = {
-  "Mode",
-  "Playback",
-  "Record",
+  "Run Mode",
+  "Play Files",
+  "Record Cfg",
   "Settings",
   "Network",
   "Status"
@@ -129,6 +129,10 @@ void MenuManager::begin()
   _display.setTextWrap(false);
   _display.clearDisplay();
   _display.display();
+
+  // Force display ON — sometimes SSD1306 enters sleep after long delays
+  _display.ssd1306_command(SSD1306_DISPLAYON);
+
   _dirty = true;
   _lastActivityMs = millis();
 
@@ -717,16 +721,13 @@ void MenuManager::_drawStatusBar()
   _display.setTextSize(1);
   _display.setTextColor(SSD1306_WHITE);
 
-  // Mode icon
-  const char *icon = "?";
-  switch (g_mode) {
-    case MODE_ARTNET:   icon = "A";  break;
-    case MODE_PLAYBACK: icon = "P";  break;
-    case MODE_RECORD:   icon = "R";  break;
-    case MODE_TEST:     icon = "T";  break;
+  // Mode icon — small geometric play triangle (5x5px)
+  if (g_mode == MODE_RECORD && g_playback.isRecording()) {
+    _display.fillCircle(4, 3, 2, SSD1306_WHITE);   // ● when recording
+  } else {
+    _display.fillTriangle(1, 1, 1, 6, 5, 3, SSD1306_WHITE); // ▶ for any active mode
   }
-  _display.setCursor(0, 0);
-  _display.print(icon);
+  _display.setCursor(8, 0);
   _display.print(" ");
 
   // Nickname (truncated to ~10 chars)
@@ -748,17 +749,22 @@ void MenuManager::_drawHome()
   _display.setTextSize(1);
   _display.setTextColor(SSD1306_WHITE);
 
-  // Mode line
+  // Mode line with ▶ icon before mode name
   _display.setCursor(0, 0);
   _display.print("Mode: ");
+  int16_t cx = 42;  // fixed X after "Mode: " (6 chars * 6px + 6px margin)
+  _display.fillTriangle(cx, 1, cx, 7, cx+5, 4, SSD1306_WHITE);
+  _display.setCursor(cx + 8, 0);
+  _display.print(" ");
   switch (g_mode) {
     case MODE_ARTNET:   _display.print("ArtNet"); break;
     case MODE_PLAYBACK: _display.print("Playback"); break;
     case MODE_RECORD:   _display.print("Record"); break;
     case MODE_TEST:     _display.print("Test"); break;
   }
+  // ● recording indicator instead of [REC]
   if (g_playback.isRecording()) {
-    _display.print(" [REC]");
+    _display.fillCircle(116, 4, 3, SSD1306_WHITE);
   }
 
   // IP
@@ -856,7 +862,32 @@ void MenuManager::_drawSubMenu(const char *title, const char * const *items, int
 
 void MenuManager::_drawModeScreen()
 {
-  _drawSubMenu("MODE", MODE_ITEMS, MODE_COUNT);
+  // Custom drawer: each item has a ▶ icon because these are action modes
+  _display.setTextSize(1);
+
+  _display.fillRect(0, 0, 128, 9, SSD1306_WHITE);
+  _display.setTextColor(SSD1306_BLACK);
+  _display.setCursor(2, 0);
+  _display.print("SELECT MODE");
+  _display.setTextColor(SSD1306_WHITE);
+
+  int8_t y = 11;
+  for (int8_t i = 0; i < MODE_COUNT; i++) {
+    if (i == _cursor) {
+      _display.fillRect(0, y, 128, 9, SSD1306_WHITE);
+      _display.setTextColor(SSD1306_BLACK);
+      // Draw play icon in black on white background
+      _display.fillTriangle(2, y+1, 2, y+7, 8, y+4, SSD1306_BLACK);
+      _display.setCursor(11, y);
+    } else {
+      _display.setTextColor(SSD1306_WHITE);
+      // Draw play icon white on black
+      _drawIcon(2, y, 'p');
+      _display.setCursor(11, y);
+    }
+    _display.print(MODE_ITEMS[i]);
+    y += 9;
+  }
 }
 
 // ========================  DRAW: PLAYBACK  ==================================
@@ -864,11 +895,12 @@ void MenuManager::_drawModeScreen()
 void MenuManager::_drawPlaybackScreen()
 {
   static const char *items[] = {
-    "Play Sequence",
-    "List Files",
-    "Speed",
+    "Play Now",
+    "Browse Files",
+    "Set Speed",
     "Stop"
   };
+  static const char icons[] = { 'p', 0, 0, 's' };
   #define PB_COUNT 4
 
   _display.setTextSize(1);
@@ -876,7 +908,7 @@ void MenuManager::_drawPlaybackScreen()
   _display.fillRect(0, 0, 128, 9, SSD1306_WHITE);
   _display.setTextColor(SSD1306_BLACK);
   _display.setCursor(2, 0);
-  _display.print("PLAYBACK");
+  _display.print("PLAY FILES");
   _display.setTextColor(SSD1306_WHITE);
 
   // Show current speed in title bar
@@ -893,8 +925,18 @@ void MenuManager::_drawPlaybackScreen()
     } else {
       _display.setTextColor(SSD1306_WHITE);
     }
-    _display.setCursor(2, y);
-    _display.print(i == _cursor ? ">" : " ");
+    // Draw icon if applicable
+    if (icons[i]) {
+      if (i == _cursor) {
+        // Inverted: draw icon in black
+        _display.fillTriangle(2, y+1, 2, y+7, 8, y+4, SSD1306_BLACK);
+      } else {
+        _drawIcon(2, y, icons[i]);
+      }
+      _display.setCursor(11, y);
+    } else {
+      _display.setCursor(2, y);
+    }
     _display.print(items[i]);
     y += 9;
   }
@@ -945,11 +987,12 @@ void MenuManager::_drawFileList()
 void MenuManager::_drawRecordScreen()
 {
   static const char *items[] = {
-    "Start/Stop",
+    "Record",
     "Set FPS",
     "Triggers",
-    "Stop (safe)"
+    "Stop"
   };
+  static const char icons[] = { 'r', 0, 0, 's' };
   #define REC_COUNT 4
 
   _display.setTextSize(1);
@@ -957,9 +1000,9 @@ void MenuManager::_drawRecordScreen()
   _display.fillRect(0, 0, 128, 9, SSD1306_WHITE);
   _display.setTextColor(SSD1306_BLACK);
   _display.setCursor(2, 0);
-  _display.print("RECORD");
+  _display.print("RECORD CFG");
   if (g_playback.isRecording()) {
-    _display.setCursor(80, 0);
+    _display.setCursor(90, 0);
     _display.print("[REC]");
   }
   _display.setTextColor(SSD1306_WHITE);
@@ -972,8 +1015,22 @@ void MenuManager::_drawRecordScreen()
     } else {
       _display.setTextColor(SSD1306_WHITE);
     }
-    _display.setCursor(2, y);
-    _display.print(i == _cursor ? ">" : " ");
+    // Draw icon if applicable
+    if (icons[i]) {
+      if (i == _cursor) {
+        // Inverted: draw icon in black
+        if (icons[i] == 'r') {
+          _display.fillCircle(5, y+4, 3, SSD1306_BLACK);
+        } else {
+          _display.fillRect(2, y+2, 5, 5, SSD1306_BLACK);
+        }
+      } else {
+        _drawIcon(2, y, icons[i]);
+      }
+      _display.setCursor(11, y);
+    } else {
+      _display.setCursor(2, y);
+    }
     _display.print(items[i]);
     y += 9;
   }
@@ -1213,6 +1270,26 @@ void MenuManager::_drawConfirm()
     _display.print(i == _cursor ? ">" : " ");
     _display.print(opts[i]);
     y += 10;
+  }
+}
+
+// ========================  ICON DRAWING  ====================================
+
+void MenuManager::_drawIcon(uint8_t x, uint8_t y, char type)
+{
+  // Draws a 6x6 px geometric icon within a 9px-tall row.
+  //   'p' = play (triangle ▶)     's' = stop (square ■)
+  //   'r' = record (circle ●)
+  switch (type) {
+    case 'p': // ▶ play triangle
+      _display.fillTriangle(x, y+1, x, y+7, x+6, y+4, SSD1306_WHITE);
+      break;
+    case 's': // ■ stop square
+      _display.fillRect(x, y+2, 5, 5, SSD1306_WHITE);
+      break;
+    case 'r': // ● record circle
+      _display.fillCircle(x+3, y+4, 3, SSD1306_WHITE);
+      break;
   }
 }
 
