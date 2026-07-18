@@ -32,12 +32,19 @@ bool sdCardRead(void *ptr, unsigned int len)
   return true;
 }
 
-// ---- Skip bytes (discard) — uses seek for efficiency -----------------------
+// ---- Skip bytes (discard) — consumes from buffer first, then seeks ---------
 void sdCardSkip(unsigned int len)
 {
-  // Use relative seek instead of reading-and-discarding
-  if (g_opened) {
-    sdFileSeekRelative((long)len);
+  if (!g_opened) return;
+  // Consume any bytes already buffered by read-ahead to keep position in sync
+  unsigned int inBuf = g_bufLen;
+  if (len <= inBuf) {
+    g_bufPos += len;
+    g_bufLen -= len;
+  } else {
+    len -= inBuf;
+    g_bufPos = g_bufLen = 0;                // invalidate buffer
+    sdFileSeekRelative((long)len);           // seek only the remainder
   }
 }
 
