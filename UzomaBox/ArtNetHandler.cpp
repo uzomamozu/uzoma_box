@@ -8,6 +8,12 @@
 // Static DMAMEM frame buffer allocation
 DMAMEM uint8_t ArtNetHandler::s_frameBuffer[FRAME_BUFFER_SIZE];
 
+// DMX512 output capture — buffers reside in UzomaBox.ino
+#if DMX_OUTPUT_ENABLED
+extern uint16_t g_dmxUniverse;
+extern uint8_t  g_dmxBuffer[512];
+#endif
+
 // ---------------------------------------------------------------------------
 ArtNetHandler::ArtNetHandler()
   : _ledsPerStrip(512)
@@ -224,6 +230,14 @@ void ArtNetHandler::processPacket(const uint8_t *packet, int len)
   const uint8_t *dmxData = packet + ARTNET_HEADER_LEN;
   int dmxLen = len - ARTNET_HEADER_LEN;
   if (dmxLen > ARTNET_DMX_LEN) dmxLen = ARTNET_DMX_LEN;
+
+  // ---- DMX512 capture: if this universe matches the configured DMX output ----
+  #if DMX_OUTPUT_ENABLED
+  if (dmxLen > 0 && g_dmxUniverse > 0 && universe == g_dmxUniverse) {
+    uint16_t copyLen = (dmxLen < 512) ? (uint16_t)dmxLen : 512;
+    memcpy(g_dmxBuffer, dmxData, copyLen);
+  }
+  #endif
 
   uint8_t ups = _universesPerStrip;
 
