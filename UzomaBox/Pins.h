@@ -64,6 +64,15 @@ extern const uint8_t ledPins[16];
 #define PIN_BTN_SELECT  20
 #define PIN_BTN_BACK    17
 
+// ========================  DMX512 OUTPUT (optocoupler 6N137 + MAX485)  =======
+// Habilitar (1) solo cuando el hardware DMX esté presente en pines 14 y 15.
+#define DMX_OUTPUT_ENABLED   0       // 1=Habilitado, 0=Deshabilitado
+
+#if DMX_OUTPUT_ENABLED
+  #define PIN_DMX_TX           14    // Serial3 TX → 6N137 → MAX485 DI
+  #define PIN_DMX_DIR          15    // GPIO → MAX485 DE/RE (HIGH=TX, LOW=RX)
+#endif
+
 // ========================  OLED DISPLAY (SSD1306, I2C)  ======================
 #define OLED_SDA        18   // Teensy 4.1 I2C0 SDA (Wire)
 #define OLED_SCL        19   // Teensy 4.1 I2C0 SCL (Wire)
