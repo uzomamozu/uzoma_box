@@ -20,6 +20,7 @@ void configSetDefaults(AppConfig &cfg)
   strncpy(cfg.nickname, "UzomaBox", sizeof(cfg.nickname));
   cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
   cfg.lastPlayFile[0] = 0;                 // no resume file by default
+  cfg.dmxUniverse = 0;                     // DMX output disabled by default
 
   // Default start universes per strip: 0, 6, 12...
   for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -139,6 +140,10 @@ bool loadConfig(AppConfig &cfg)
     else if (!strcmp(key, "last_play_file")) {
       strncpy(cfg.lastPlayFile, value, sizeof(cfg.lastPlayFile) - 1);
       cfg.lastPlayFile[sizeof(cfg.lastPlayFile) - 1] = 0;
+    }
+    else if (!strcmp(key, "dmx_universe")) {
+      int u = atoi(value);
+      if (u >= 0 && u <= 255) cfg.dmxUniverse = (uint16_t)u;
     }
   }
 
