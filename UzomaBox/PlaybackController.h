@@ -2,6 +2,7 @@
 #define PlaybackController_h
 
 #include <Arduino.h>
+#include "Pins.h"
 #include "SDManager.h"
 
 // .BIN file header constants
@@ -13,8 +14,8 @@
 #define BIN_FRAME_HEADER_LEN    5   // v1
 #define BIN_FRAME_HEADER_LEN_V2 7   // v2
 
-// Maximum frame size: 7B header + 512 LEDs/strip × 16 strips × 3 bytes = 24,576 + 7
-#define MAX_FRAME_SIZE          (BIN_FRAME_HEADER_LEN_V2 + 512 * 16 * 3)
+// Maximum frame size: 7B header + MAX_LEDS_PER_STRIP × ACTIVE_OUTPUTS × 3
+#define MAX_FRAME_SIZE          (BIN_FRAME_HEADER_LEN_V2 + MAX_LEDS_PER_STRIP * ACTIVE_OUTPUTS * 3)
 
 // Double-buffer count for SD write buffering during recording
 #define REC_BUFFER_COUNT  2

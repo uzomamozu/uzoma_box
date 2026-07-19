@@ -196,6 +196,7 @@ class DeviceConfigWindow:
         self._progress_active = False
         self._num_outputs = 8  # default until we query the firmware
         self._start_univ_dirty = []
+        self._led_width_dirty = False
         self._color_order_dirty = False
         self._output_active_dirty = False
         # Recording breath animation
@@ -355,7 +356,7 @@ class DeviceConfigWindow:
             self.subnet_univ_vars.append(suv)
             ttk.Label(row_frame, textvariable=suv, width=10, anchor=tk.CENTER,
                       font=("Consolas", 9)).pack(side=tk.LEFT)
-        self.led_width_var.trace_add("write", lambda *a: self._update_all_univ_ranges())
+        self.led_width_var.trace_add("write", lambda *a: self._on_led_width_changed())
         self.color_order_var.trace_add("write", lambda *a: self._on_color_order_changed())
         # Add trace to all output active checkboxes
         for av in self.output_active_vars:
@@ -433,6 +434,11 @@ class DeviceConfigWindow:
             self.subnet_univ_vars[idx].set("%d:%d" % (subnet, univ))
         except (ValueError, TypeError):
             self.subnet_univ_vars[idx].set("--")
+
+    def _on_led_width_changed(self):
+        """Mark led_width as dirty so status poll doesn't overwrite it, and recalc ranges."""
+        self._led_width_dirty = True
+        self._update_all_univ_ranges()
 
     def _on_color_order_changed(self):
         """Mark color order as dirty so status poll doesn't overwrite it."""
@@ -772,6 +778,7 @@ class DeviceConfigWindow:
         self._cmd_send("CONFIG:start_universe=%s" % univ)
         time.sleep(0.05)
         self._cmd_send("CONFIG:led_width=%s" % led_w)
+        self._led_width_dirty = False
         self._start_univ_dirty = [False] * self._num_outputs
         self.log("LED settings updated on %s (rebooting)" % self.ip)
         self.win.destroy()
@@ -965,7 +972,8 @@ class DeviceConfigWindow:
             if not self._color_order_dirty:
                 self.color_order_var.set(v)
         elif k == "led_width":
-            self.led_width_var.set(v)
+            if not self._led_width_dirty:
+                self.led_width_var.set(v)
         elif k == "start_universe":
             parts = v.split(",")
             max_i = min(self._num_outputs, len(self.start_univ_vars))

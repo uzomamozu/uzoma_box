@@ -13,7 +13,7 @@ void configSetDefaults(AppConfig &cfg)
   cfg.mac[0]          = 0xDE; cfg.mac[1] = 0xAD;
   cfg.mac[2]          = 0xBE; cfg.mac[3] = 0xEF;
   cfg.mac[4]          = 0xBE; cfg.mac[5] = 0xED;
-  cfg.ledWidth        = 512;
+  cfg.ledWidth        = MAX_LEDS_PER_STRIP;
   cfg.colorOrder      = ORDER_RGB;
   cfg.playbackSpeed   = 1.0f;
   cfg.recordFps       = 30;
@@ -21,9 +21,9 @@ void configSetDefaults(AppConfig &cfg)
   cfg.nickname[sizeof(cfg.nickname) - 1] = 0;
   cfg.lastPlayFile[0] = 0;                 // no resume file by default
 
-  // Default start universes per strip: 0, 3, 6...
+  // Default start universes per strip: 0, 6, 12...
   for (int i = 0; i < MAX_OUTPUTS; i++) {
-    cfg.startUniverse[i] = i * 3;
+    cfg.startUniverse[i] = i * 6;
     cfg.outputActive[i]  = (i < ACTIVE_OUTPUTS);
   }
 }

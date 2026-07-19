@@ -18,8 +18,38 @@
 // ========================  LED OUTPUT STRIPS  ================================
 // Change ACTIVE_OUTPUTS to 8 for the 8-output hardware variant before flashing.
 // MAX_OUTPUTS is fixed at 16 (physical hardware capacity) — do not change.
-#define ACTIVE_OUTPUTS  16     // ← change to 8 for 8-output version
+#define ACTIVE_OUTPUTS  8     // ← change to 8 for 8-output version
 #define MAX_OUTPUTS     16     // physical maximum, never change
+
+// MAX_LEDS_PER_STRIP depends on ACTIVE_OUTPUTS to keep total pixel buffer ≤ 8192
+//   16 outputs × 512 LEDs = 8192 pixels  → 24,576 bytes frame buffer
+//    8 outputs × 1024 LEDs = 8192 pixels → 24,576 bytes frame buffer
+#if ACTIVE_OUTPUTS == 8
+  #define MAX_LEDS_PER_STRIP  1024
+#else
+  #define MAX_LEDS_PER_STRIP  512
+#endif
+
+// Hard FPS cap — WS2811 at 800 kHz (~30 µs/LED)
+//   8×1024: 1024×30µs ≈ 30.7ms → ~32 FPS theoretical max
+//   16×512: 512×30µs  ≈ 15.4ms → ~65 FPS theoretical max
+// Both capped at 30 FPS for safety margin
+#define MAX_FRAME_FPS         30
+#define MIN_FRAME_INTERVAL_US (1000000UL / MAX_FRAME_FPS)  // 33333 µs
+
+/*
+ * DMAMEM usage for 8 outputs × 1024 LEDs (worst case):
+ *   s_displayMemory:  1024 × 16 × 4 bytes =  65,536 B
+ *   s_drawingMemory:  1024 × 16 × 4 bytes =  65,536 B
+ *   s_frameBuffer:    8192 pixels × 3      =  24,576 B
+ *   g_playbackBuffer: 8192 pixels × 3      =  24,576 B
+ *   s_recBuffer[2]:   2 × 24,583           =  49,166 B
+ *   ─────────────────────────────────────────────────
+ *   Total:                                  ~229 KB of 512 KB DMAMEM (44.7%)
+ *   Available:                              ~283 KB for future expansion
+ *
+ * For 16 × 512:  ~163 KB (31.8%)
+ */
 
 // Teensy 4.1 OctoWS2811 pins (16 outputs in order):
 //   NOTE: Pin 4 is ENET_RST (Ethernet PHY reset) — output #5 uses pin 8 instead!

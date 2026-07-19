@@ -16,16 +16,17 @@
 #define ARTNET_OP_SYNC      0x5200
 #define ARTNET_POLL_REPLY_LEN 300  // max ArtPollReply length (16 ports)
 
-// Maximum universes per strip (safety for up to 682 LEDs: 682*3=2046, ceil/512=4)
-#define MAX_UNIVERSES_PER_STRIP  4
+// Maximum universes per strip (safety for up to 1024 LEDs: 1024*3=3072, ceil/512=6)
+#define MAX_UNIVERSES_PER_STRIP  6
 
 // Maximum time (ms) to wait for a complete frame before flushing partial data
 // Prevents LED freeze when one universe is lost
 #define FRAME_TIMEOUT_MS     16
 
-// Maximum pixel capacity (512 LEDs/strip × 16 strips)
-#define MAX_TOTAL_PIXELS     (512 * 16)
-#define FRAME_BUFFER_SIZE    (MAX_TOTAL_PIXELS * 3)  // 24576 bytes
+// Maximum pixel capacity based on compile-time hardware config
+// For 16×512: 512×16 = 8192 pixels. For 8×1024: 1024×8 = 8192 pixels (same size)
+#define MAX_TOTAL_PIXELS     (MAX_LEDS_PER_STRIP * ACTIVE_OUTPUTS)
+#define FRAME_BUFFER_SIZE    (MAX_TOTAL_PIXELS * 3)  // 24576 bytes for both configs
 
 class ArtNetHandler {
 public:

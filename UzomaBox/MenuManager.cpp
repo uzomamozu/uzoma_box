@@ -548,7 +548,7 @@ void MenuManager::_handleEvent(ButtonEvent ev)
         } else if (_cursor == 1) {  // LEDs per strip
           _editValue = g_config.ledWidth;
           _editMin = 1;
-          _editMax = 512;
+          _editMax = MAX_LEDS_PER_STRIP;
           _editStep = 1;
           strcpy(_editLabel, "LEDs/strip");
           _idleOverride = true;

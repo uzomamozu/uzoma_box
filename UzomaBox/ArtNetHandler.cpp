@@ -43,7 +43,7 @@ void ArtNetHandler::begin()
 void ArtNetHandler::setLedsPerStrip(uint16_t n)
 {
   _ledsPerStrip = n;
-  _totalPixels = n * 16;
+  _totalPixels = n * ACTIVE_OUTPUTS;
 
   // Recalculate universes per strip: ceil(n * 3 / 512)
   _universesPerStrip = (uint8_t)((n * 3 + DMX_PER_UNIVERSE - 1) / DMX_PER_UNIVERSE);

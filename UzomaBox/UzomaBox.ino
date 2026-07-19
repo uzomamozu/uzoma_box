@@ -67,6 +67,7 @@ uint32_t           g_recStopStart    = 0;
 
 // Frame timing for ArtNet mode
 uint32_t           g_lastArtNetFrame = 0;
+uint32_t           g_lastArtNetShow  = 0;   // micros() of last g_leds.show() call (for 30 FPS cap)
 uint32_t           g_frameCounter    = 0;
 
 // Test mode state
@@ -88,9 +89,9 @@ uint32_t           g_fpsFrames = 0;
 uint32_t           g_fpsDisplay = 0;   // stable FPS value (updated each second)
 uint32_t           g_fpsLastPrint = 0;
 
-// Playback temporary buffer (max 16 strips × 512 LEDs × 3 bytes = 24576)
+// Playback temporary buffer (max MAX_LEDS_PER_STRIP × ACTIVE_OUTPUTS × 3 bytes)
 // Shared between playback and test mode to avoid stack overflow
-DMAMEM static uint8_t g_playbackBuffer[512 * 16 * 3];
+DMAMEM static uint8_t g_playbackBuffer[MAX_LEDS_PER_STRIP * ACTIVE_OUTPUTS * 3];
 
 // Frame dedup guard: micros() of last recorded frame write.
 // ArtNet double-fire (timeout + _allUpdated) can write the same frame twice.
@@ -302,9 +303,16 @@ void loop()
 
     case MODE_ARTNET:
       g_artNet.poll();
-      if (g_artNet.isFrameReady()) {
-        g_artNet.clearFrameReady();
-        g_leds.show();
+      {
+        uint32_t nowUs = micros();
+        // Enforce 30 FPS cap AND wait for a complete frame
+        if (nowUs - g_lastArtNetShow >= MIN_FRAME_INTERVAL_US) {
+          if (g_artNet.isFrameReady()) {
+            g_artNet.clearFrameReady();
+            g_leds.show();
+            g_lastArtNetShow = nowUs;
+          }
+        }
       }
       break;
 
@@ -329,9 +337,16 @@ void loop()
 
     case MODE_RECORD:
       g_artNet.poll();
-      if (g_artNet.isFrameReady()) {
-        g_artNet.clearFrameReady();
-        g_leds.show();
+      {
+        uint32_t nowUs = micros();
+        // 30 FPS cap also applies in record mode
+        if (nowUs - g_lastArtNetShow >= MIN_FRAME_INTERVAL_US) {
+          if (g_artNet.isFrameReady()) {
+            g_artNet.clearFrameReady();
+            g_leds.show();
+            g_lastArtNetShow = nowUs;
+          }
+        }
       }
       break;
 

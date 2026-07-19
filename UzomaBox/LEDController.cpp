@@ -3,11 +3,8 @@
 #include <string.h>
 
 // ---------------------------------------------------------------------------
-// Maximum compile-time dimension so we can statically allocate DMAMEM memory.
-// The user can set up to MAX_LEDS_PER_STRIP in config.
-// Adjust if you need more LEDs.
+// MAX_LEDS_PER_STRIP is now defined in Pins.h based on ACTIVE_OUTPUTS.
 // ---------------------------------------------------------------------------
-#define MAX_LEDS_PER_STRIP  512
 
 // DMAMEM must be statically allocated on Teensy.
 // Single contiguous buffer for all 16 strips.
