@@ -20,8 +20,9 @@
 #define MAX_UNIVERSES_PER_STRIP  6
 
 // Maximum time (ms) to wait for a complete frame before flushing partial data
-// Prevents LED freeze when one universe is lost
-#define FRAME_TIMEOUT_MS     16
+// Prevents LED freeze when one universe is lost.
+// Increased to 40ms for 8×1024 config (48 universes/frame, jitter tolerance)
+#define FRAME_TIMEOUT_MS     40
 
 // Maximum pixel capacity based on compile-time hardware config
 // For 16×512: 512×16 = 8192 pixels. For 8×1024: 1024×8 = 8192 pixels (same size)
