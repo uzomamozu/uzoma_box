@@ -1,6 +1,5 @@
 #include "Config.h"
 #include "SDManager.h"
-#include <NativeEthernet.h>
 
 // ---------------------------------------------------------------------------
 // Default values

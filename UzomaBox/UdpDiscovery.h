@@ -2,8 +2,8 @@
 #define UdpDiscovery_h
 
 #include <Arduino.h>
-#include <NativeEthernet.h>
-#include <NativeEthernetUdp.h>
+#include <QNEthernet.h>
+using namespace qindesign::network;
 
 // UDP discovery port for the desktop assistant to find controllers
 #define DISCOVERY_PORT     7777

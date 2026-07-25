@@ -2,7 +2,8 @@
 #define TCPHandler_h
 
 #include <Arduino.h>
-#include <NativeEthernet.h>
+#include <QNEthernet.h>
+using namespace qindesign::network;
 
 // TCP server port for desktop app communication
 #define TCP_PORT  8888

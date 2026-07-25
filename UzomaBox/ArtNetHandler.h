@@ -2,8 +2,8 @@
 #define ArtNetHandler_h
 
 #include <Arduino.h>
-#include <NativeEthernet.h>
-#include <NativeEthernetUdp.h>
+#include <QNEthernet.h>
+using namespace qindesign::network;
 #include "Pins.h"
 
 // ArtNet constants

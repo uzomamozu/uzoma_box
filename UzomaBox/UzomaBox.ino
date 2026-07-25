@@ -6,7 +6,7 @@
  *    16 × WS2811 LED strips (default 512 LEDs each)
  *    74HCT245 buffer + 100Ω resistors on each LED output pin
  *    SD card on built-in microSD slot (BUILTIN_SDCARD)
- *    NativeEthernet for ArtNet + TCP
+ *    QNEthernet for ArtNet + TCP (supports non-blocking begin())
  *    OLED display (I2C) + 4 buttons
  *
  *  ╔══════════════════════════════════════════════════════════════╗
@@ -41,6 +41,12 @@ const uint8_t ledPins[16] = {0,  1,  2,  3,  8,  5,  6,  7,
 // Watchdog functionality is now in Watchdog.h / Watchdog.cpp.
 // See that file for configuration and feeding.
 #include "Watchdog.h"
+
+// ========================  ETHERNET RETRY  ==================================
+// QNEthernet.begin() is non-blocking: it returns immediately (in ~10ms)
+// regardless of whether a cable is connected. We poll linkStatus() every
+// ETH_RETRY_INTERVAL_MS to detect when a cable is plugged in.
+#define ETH_RETRY_INTERVAL_MS  5000   // ms between link status checks in loop
 
 // ========================  GLOBAL OBJECTS  ================================
 
@@ -99,6 +105,10 @@ DMAMEM static uint8_t g_playbackBuffer[MAX_LEDS_PER_STRIP * ACTIVE_OUTPUTS * 3];
 // preventing inflated files that cause playback speed issues.
 static uint32_t g_lastRecordUs = 0;
 
+// Ethernet state
+bool              g_ethernetOk       = false;   // true when network services are live
+uint32_t          g_ethRetryTimer    = 0;       // millis() of last retry attempt
+
 // ========================  FORWARD DECLARATIONS  ==========================
 
 void onArtNetFrame(const uint8_t *rgbData, uint16_t totalPixels);
@@ -107,6 +117,7 @@ void runTestAnimation();
 void rebootTeensy();
 void printStatus();
 void setMode(OperatingMode newMode);
+bool initEthernetServices();
 
 // ========================  SETUP  =========================================
 
@@ -206,28 +217,28 @@ void setup()
 
   watchdog_feed();  // before 1s PHY delay
 
-  // ---- Initialise Ethernet (NativeEthernet on Teensy 4.1) ---------------
-  // Delay to allow capacitors to charge before Ethernet PHY power spike
-  delay(1000);
-  watchdog_feed();  // after 1s PHY delay
+  // ---- Initialise Ethernet (QNEthernet on Teensy 4.1) --------------------
+  // QNEthernet.begin() is non-blocking: it returns immediately (~10ms)
+  // even without a cable connected. We check link status after the call and
+  // start network services if link is up. Otherwise we retry in loop().
   #ifndef DIAG_NO_ETHERNET
+    delay(1000);  // allow capacitors to charge before Ethernet PHY power spike
+    watchdog_feed();
+
+    Serial.println("Calling Ethernet.begin() (non-blocking)...");
     Ethernet.begin(g_config.mac, g_config.ip);
-    Serial.print("Ethernet IP: ");
+    Serial.print("Ethernet.begin() returned. IP: ");
     Serial.println(Ethernet.localIP());
-    // ---- Initialise ArtNet ------------------------------------------------
-    g_artNet.setLedsPerStrip(g_config.ledWidth);
-    g_artNet.setUniverseMapping(g_config.startUniverse);
-    g_artNet.setOutputActive(g_config.outputActive);
-    g_artNet.setFrameCallback(onArtNetFrame);
-    g_artNet.begin();
-    // ---- Initialise TCP server --------------------------------------------
-    g_tcp.begin();
-    Serial.println("TCP server on port 8888");
-    // ---- Initialise UDP discovery ------------------------------------------
-    g_discovery.begin();
-    Serial.println("UDP discovery on port 7777");
+
+    if (Ethernet.linkStatus() == LinkON) {
+      Serial.println("Ethernet link detected at boot");
+      g_ethernetOk = initEthernetServices();
+    } else {
+      Serial.println("No Ethernet link at boot – will retry every 5000 ms");
+    }
   #else
     Serial.println("DIAG: NO_ETHERNET mode – Ethernet/ArtNet/TCP/UDP disabled");
+    g_ethernetOk = false;
   #endif
 
   // ---- Set initial mode -------------------------------------------------
@@ -266,6 +277,29 @@ void setup()
   // If not, the issue is physical (voltage/ripple/connections)
 }
 
+// ========================  INIT NETWORK SERVICES  =========================
+// Starts ArtNet, TCP, and UDP discovery after Ethernet link is confirmed.
+bool initEthernetServices()
+{
+  // ---- Initialise ArtNet ------------------------------------------------
+  g_artNet.setLedsPerStrip(g_config.ledWidth);
+  g_artNet.setUniverseMapping(g_config.startUniverse);
+  g_artNet.setOutputActive(g_config.outputActive);
+  g_artNet.setFrameCallback(onArtNetFrame);
+  g_artNet.begin();
+  Serial.println("ArtNet on port 6454");
+
+  // ---- Initialise TCP server --------------------------------------------
+  g_tcp.begin();
+  Serial.println("TCP server on port 8888");
+
+  // ---- Initialise UDP discovery ------------------------------------------
+  g_discovery.begin();
+  Serial.println("UDP discovery on port 7777");
+
+  return true;
+}
+
 // ========================  LOOP  ==========================================
 
 void loop()
@@ -274,11 +308,35 @@ void loop()
 
   watchdog_heartbeat();
 
-  char cmdBuffer[CMD_BUFFER_SIZE];
-  int  cmd = g_tcp.poll(cmdBuffer, sizeof(cmdBuffer));
+  // ---- Ethernet retry logic ---------------------------------------------
+  // QNEthernet.begin() was called in setup. Every ETH_RETRY_INTERVAL_MS we
+  // poll linkStatus(). If the cable was plugged in after boot, we detect it
+  // here and start the network services (ArtNet, TCP, UDP).
+  #ifndef DIAG_NO_ETHERNET
+    if (!g_ethernetOk) {
+      uint32_t now = millis();
+      if (now - g_ethRetryTimer >= ETH_RETRY_INTERVAL_MS) {
+        g_ethRetryTimer = now;
+        if (Ethernet.linkStatus() == LinkON) {
+          Serial.print("Ethernet link detected (late connect). IP: ");
+          Serial.println(Ethernet.localIP());
+          g_ethernetOk = initEthernetServices();
+        }
+      }
+    }
+  #endif
 
-  if (cmd != CMD_NONE) {
-    handleTcpCommand(cmd, cmdBuffer);
+  // ---- Network-dependent operations -------------------------------------
+  if (g_ethernetOk) {
+    char cmdBuffer[CMD_BUFFER_SIZE];
+    int  cmd = g_tcp.poll(cmdBuffer, sizeof(cmdBuffer));
+
+    if (cmd != CMD_NONE) {
+      handleTcpCommand(cmd, cmdBuffer);
+    }
+
+    g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
+                     Ethernet.localIP(), 0);
   }
 
   if (g_identifyActive) {
@@ -296,13 +354,12 @@ void loop()
     }
   }
 
-  g_discovery.poll(g_config.nickname, MODEL_STRING, FW_VERSION,
-                   Ethernet.localIP(), 0);
-
   switch (g_mode) {
 
     case MODE_ARTNET:
-      g_artNet.poll();
+      if (g_ethernetOk) {
+        g_artNet.poll();
+      }
       {
         uint32_t nowUs = micros();
         // Enforce 30 FPS cap AND wait for a complete frame
@@ -336,7 +393,9 @@ void loop()
       break;
 
     case MODE_RECORD:
-      g_artNet.poll();
+      if (g_ethernetOk) {
+        g_artNet.poll();
+      }
       {
         uint32_t nowUs = micros();
         // 30 FPS cap also applies in record mode

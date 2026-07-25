@@ -2,7 +2,7 @@
 #define Config_h
 
 #include <Arduino.h>
-#include <NativeEthernet.h>
+#include <QNEthernet.h>
 
 #include "Pins.h"
 #include "LEDController.h"
