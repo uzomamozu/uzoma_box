@@ -1,5 +1,7 @@
 # UzomaBox
 
+> **⚠️ This project is being rewritten from scratch (v2).** The new desktop app lives at **[uzomabox-assistant](https://github.com/uzomamozu/uzomabox-assistant)** — Tauri 2 + React + Rust, standalone (no Python). The firmware rewrite (PlatformIO, protocol v2, DMX512 output) follows as Phase 2. This repository remains as the legacy reference; see branch `feature/dmx-output` for the latest legacy state.
+
 Teensy 4.1 multi-mode LED controller for 8 × WS2811 LED strips.
 
 ## Overview
